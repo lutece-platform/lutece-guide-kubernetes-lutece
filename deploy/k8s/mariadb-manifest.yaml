@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mariadb-credentials
+  namespace: default
+type: Opaque
+data:
+  db-user: bHV0ZWNl
+  db-password: c29tZV9wYXNzd29yZA==
+  db-rootpassword: cm9vdHBhc3N3b3Jk
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: mariadb
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mariadb
+    spec:
+      containers:
+      - name: mariadb
+        image: mariadb:10.5
+        env:
+          - name: MYSQL_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mariadb-credentials
+                key: db-rootpassword
+          - name: MYSQL_DATABASE
+            value: "core"
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: mariadb-credentials
+                key: db-user
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mariadb-credentials
+                key: db-password
+        ports:
+          - containerPort: 3306
+            name: mariadb
+        volumeMounts:
+          - name: data
+            mountPath: /var/lib/mysql
+          - name: init-sql
+            mountPath: /docker-entrypoint-initdb.d/init.sql
+            subPath: init.sql
+          - name: dump-sql
+            mountPath: /docker-entrypoint-initdb.d/dump.sql
+            subPath: dump.sql
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mariadb-pvc
+        - name: init-sql
+          configMap:
+            name: mariadb-init-sql
+        - name: dump-sql
+          configMap:
+            name: mariadb-dump-sql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-service
+  namespace: default
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: mariadb

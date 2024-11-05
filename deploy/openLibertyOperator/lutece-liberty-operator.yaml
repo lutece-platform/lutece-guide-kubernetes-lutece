@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  namespace: default
+type: Opaque
+data:
+  db-user: bHV0ZWNl
+  db-password: c29tZV9wYXNzd29yZA==
+  db-uri: amRiYzpteXNxbDovL21hcmlhZGItc2VydmljZTozMzA2L2NvcmU/YXV0b1JlY29ubmVjdD10cnVlJnVzZVVuaWNvZGU9eWVzJmNoYXJhY3RlckVuY29kaW5nPXV0Zjg=
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lutece-config
+  namespace: default
+data:
+  mp_config_profile: dev
+---
+# tag::system[]
+apiVersion: apps.openliberty.io/v1
+# tag::olapp[]
+kind: OpenLibertyApplication
+# end::olapp[]
+metadata:
+  name: lutece
+  labels:
+    name: lutece
+spec:
+  # tag::sysImage[]
+  applicationImage: rafikyahiaoui/lutece-site-8:1.0.0-SNAPSHOT
+  # end::sysImage[]
+  # tag::service[]
+  service:
+    # tag::servicePort[]
+    port: 9443
+    # end::servicePort[]
+  # end::service[]
+  # tag::expose[]
+  expose: true
+  # end::expose[]
+  route:
+    pathType: ImplementationSpecific
+  # tag::luteceEnv[]
+  env:
+    - name: WLP_LOGGING_MESSAGE_FORMAT
+      value: "json"
+    - name: WLP_LOGGING_MESSAGE_SOURCE
+      value: "message,trace,accessLog,ffdc,audit"
+    - name: MP_CONFIG_PROFILE
+      valueFrom:
+        configMapKeyRef:
+          name: lutece-config
+          key: mp_config_profile
+    - name: PORTAL_USER
+      valueFrom:
+        secretKeyRef:
+          name: db-credentials
+          key: db-user
+    - name: PORTAL_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: db-credentials
+          key: db-password
+    - name: PORTAL_URL
+      valueFrom:
+        secretKeyRef:
+          name: db-credentials
+          key: db-uri
+  # end::luteceEnv[]
+  # tag::healthProbes[]
+  # tag::startupProbe[]
+  probes:
+    startup:
+      failureThreshold: 12
+      httpGet:
+        path: /health/started
+        port: 9443
+        scheme: HTTPS
+      initialDelaySeconds: 30
+      periodSeconds: 2
+      timeoutSeconds: 10
+  # end::startupProbe[]
+  # tag::livenessProbe[]
+    liveness:
+      failureThreshold: 12
+      httpGet:
+        path: /health/live
+        port: 9443
+        scheme: HTTPS
+      initialDelaySeconds: 30
+      periodSeconds: 2
+      timeoutSeconds: 10
+  # end::livenessProbe[]
+  # tag::readinessProbe[]
+    readiness:
+      failureThreshold: 12
+      httpGet:
+        path: /health/ready
+        port: 9443
+        scheme: HTTPS
+      initialDelaySeconds: 30
+      periodSeconds: 2
+      timeoutSeconds: 10
+  # end::readinessProbe[]
+  # end::healthProbes[]
+# end::lutece[]

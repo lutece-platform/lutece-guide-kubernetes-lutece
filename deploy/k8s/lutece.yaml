@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  namespace: default
+type: Opaque
+data:
+  db-user: bHV0ZWNl
+  db-password: c29tZV9wYXNzd29yZA==
+  db-uri: amRiYzpteXNxbDovL21hcmlhZGItc2VydmljZTozMzA2L2NvcmU/YXV0b1JlY29ubmVjdD10cnVlJnVzZVVuaWNvZGU9eWVzJmNoYXJhY3RlckVuY29kaW5nPXV0Zjg=
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lutece-config
+  namespace: default
+data:
+  mp_config_profile: dev
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lutece-deployment
+  namespace: default
+  labels:
+    app: lutece
+spec:
+  selector:
+    matchLabels:
+      app: lutece
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: lutece
+    spec:
+      containers:
+      - name: lutece-container
+        image: rafikyahiaoui/lutece-site-8:1.0.0-SNAPSHOT
+        ports:
+        - containerPort: 9090
+        env:
+        - name: LUTECE_APP_HOSTNAME
+          value: lutece-service
+        - name: MP_CONFIG_PROFILE
+          valueFrom:
+            configMapKeyRef:
+              name: lutece-config
+              key: mp_config_profile
+        - name: PORTAL_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: db-user
+        - name: PORTAL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: db-password
+        - name: PORTAL_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: db-uri
+        startupProbe:
+          httpGet:
+            path: /health/started
+            port: 9090
+          initialDelaySeconds: 15
+          failureThreshold: 30
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 8
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 8
+          failureThreshold: 3        
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lutece-service
+  namespace: default
+spec:
+  type: NodePort
+  selector:
+    app: lutece
+  ports:
+  - protocol: TCP
+    port: 9090
+    targetPort: 9090
+    nodePort: 31000

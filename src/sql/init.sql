@@ -1,0 +1,5 @@
+-- init.sql
+CREATE DATABASE IF NOT EXISTS exampledb;
+CREATE USER IF NOT EXISTS 'lutece'@'%' IDENTIFIED BY 'some_password';
+GRANT ALL PRIVILEGES ON core.* TO 'lutece'@'%';
+FLUSH PRIVILEGES;
