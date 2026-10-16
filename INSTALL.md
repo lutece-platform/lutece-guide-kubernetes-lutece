@@ -350,6 +350,7 @@ Un pod de plus pendant une mise à jour, jamais un de moins.
 | `readinessProbe` | `/health/ready`, délai 5 s | Vérifie la base ; retire un pod lent du Service sans le tuer |
 | `livenessProbe` | `/health/live`, délai 10 s, 6 échecs | Avec 1 s, le pod resté seul avec toute la charge après la perte de l'autre était tué à son tour |
 | `preStop` | `sleep 10` | Sortir du Service avant l'arrêt d'Open Liberty |
+| `initContainers` | `wait-for-mariadb` | Démarré avant la base, Lutece échoue à l'ouvrir et reste non prêt jusqu'à ce que la sonde de démarrage le tue ; aussi dans `lutece-migration.yaml` |
 | `terminationGracePeriodSeconds` | 60 | Au-dessus du `preStop` (10 s) et du transfert des partitions (45 s) |
 
 ## 4.5. L'ingress

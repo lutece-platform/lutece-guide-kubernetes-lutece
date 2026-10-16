@@ -51,6 +51,7 @@ docker build -t lutece-guide-kubernetes:multi-1.0.0-SNAPSHOT .
 
 # Base de données, observabilité, ressources communes du site
 kubectl apply -f deploy/k8s/mariadb-manifest.yaml
+kubectl rollout status deployment/mariadb
 kubectl apply -f deploy/k8s/lgtm.yaml
 kubectl apply -f deploy/k8s/lutece-base.yaml
 

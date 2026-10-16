@@ -29,6 +29,13 @@ spec:
       securityContext:
         # OpenLiberty tourne en utilisateur 1001, groupe 0 : le groupe 0 écrit sur le volume partagé
         fsGroup: 0
+      # Attendre MariaDB : démarré avant elle, Lutece échoue à ouvrir sa base (Liquibase, puis la webapp) et le pod reste
+      # non prêt jusqu'à ce que la sonde de démarrage le tue (10 min). Même image que la base : rien de plus à télécharger.
+      # --skip-ssl : le client MariaDB 11 refuse le certificat auto-signé du serveur ; ping ne transmet aucune donnée.
+      initContainers:
+        - name: wait-for-mariadb
+          image: mariadb:11.8
+          command: ["sh", "-c", "until mariadb-admin ping -h mariadb-service --skip-ssl --silent; do echo waiting for mariadb-service; sleep 2; done"]
       containers:
         - name: lutece-container
           image: lutece-guide-kubernetes:multi-1.0.0-SNAPSHOT
