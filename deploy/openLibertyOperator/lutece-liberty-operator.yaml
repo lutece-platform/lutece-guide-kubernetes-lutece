@@ -24,6 +24,11 @@ metadata:
     name: lutece
 spec:
   applicationImage: lutece-guide-kubernetes:1.0.0-SNAPSHOT
+  # Attendre MariaDB avant de démarrer Lutece
+  initContainers:
+    - name: wait-for-mariadb
+      image: mariadb:11.8
+      command: ["sh", "-c", "until mariadb-admin ping -h mariadb-service --skip-ssl --silent; do echo waiting for mariadb-service; sleep 2; done"]
   pullPolicy: IfNotPresent
   # Une seule instance : cache Ehcache local à la JVM
   replicas: 1

@@ -244,6 +244,10 @@ Sondes (MicroProfile Health) :
 
 `preStop` (`sleep 10`) laisse le pod sortir du Service avant l'arrêt d'Open Liberty.
 
+Un conteneur d'initialisation (`wait-for-mariadb`, même image que la base) attend que MariaDB réponde avant de démarrer
+Lutece. Sans lui, un pod démarré avant la base échoue à l'ouvrir (Liquibase, puis la webapp) et reste non prêt jusqu'à ce
+que la sonde de démarrage le tue, 10 minutes plus tard (vérifié sur minikube).
+
 Un pod tué pendant une migration Liquibase (sonde de démarrage trop courte, limite mémoire, suppression du pod) laisse
 la table `DATABASECHANGELOGLOCK` verrouillée : les démarrages suivants affichent `Waiting for changelog lock....` sans
 fin. Libérer le verrou, puis redémarrer le pod :
