@@ -5,6 +5,16 @@ Ce guide fournit des instructions pour déployer une application Lutece sur Kube
 
 **Pour suivre le guide étape par étape avec une description détaillée des instructions [Documentation détaillée du guide](INSTALL.md)**
 
+> **Lutece 8, socle Forms : le guide est mis à jour sur deux branches**
+>
+> - [`mono-instance`](https://github.com/lutece-platform/lutece-guide-kubernetes-lutece/tree/mono-instance) : le site en
+>   une seule instance (session et cache Ehcache dans la JVM), dimensionné et mesuré sous charge.
+> - [`multi-instance`](https://github.com/lutece-platform/lutece-guide-kubernetes-lutece/tree/multi-instance) : le site
+>   en plusieurs réplicas, session HTTP et cache Lutece partagés par Hazelcast, daemons en cluster, migrations depuis un
+>   seul pod.
+>
+> Cette branche `master` garde la première version du guide (site minimal, lutece-core seul).
+
 ## 📋 Table des matières
 
 1. [Objectifs](#objectifs)
