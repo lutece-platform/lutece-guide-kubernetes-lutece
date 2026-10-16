@@ -1,0 +1,75 @@
+# Migrations Liquibase depuis un seul pod, sur une base neuve et avant chaque nouvelle image (les réplicas démarrent
+# avec Liquibase désactivé). Même image que lutece.yaml, compte de service et volume de lutece-base.yaml ; son propre label, pour qu'aucun
+# Service ne lui envoie de trafic, et son propre nom de service Hazelcast, pour ne rejoindre aucun réplica en marche.
+#   kubectl apply -f deploy/k8s/lutece-migration.yaml
+#   kubectl rollout status deployment/lutece-liquibase --timeout=10m   # prêt = migrations faites
+#   kubectl delete -f deploy/k8s/lutece-migration.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lutece-liquibase
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lutece-liquibase
+  template:
+    metadata:
+      labels:
+        app: lutece-liquibase
+    spec:
+      serviceAccountName: lutece
+      securityContext:
+        fsGroup: 0
+      containers:
+        - name: lutece-container
+          image: lutece-guide-kubernetes:multi-1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PORTAL_SERVERNAME
+              value: mariadb-service
+            - name: PORTAL_DBNAME
+              value: core
+            - name: PORTAL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: db-user
+            - name: PORTAL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: db-password
+            - name: JVM_ARGS
+              value: "-Dliquibase.enabled.at.startup=true -Dhz.service-name=lutece-liquibase -Dforms.internalIndexer.lucene.indexPath=/opt/data/lucene/plugins/forms/index"
+          ports:
+            - name: http
+              containerPort: 9090
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1536Mi
+            limits:
+              cpu: "2"
+              memory: 1536Mi
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: http
+            periodSeconds: 5
+            # Les migrations d'une grosse montée de version peuvent être longues : 10 min
+            failureThreshold: 120
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: lucene
+              mountPath: /opt/data/lucene
+      volumes:
+        - name: lucene
+          persistentVolumeClaim:
+            claimName: lutece-lucene

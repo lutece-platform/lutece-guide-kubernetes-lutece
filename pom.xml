@@ -1,18 +1,24 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <artifactId>lutece-site-pom</artifactId>
         <groupId>fr.paris.lutece.tools</groupId>
-        <version>8.0.0-SNAPSHOT</version>
+        <version>8.0.4</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
-    <groupId>fr.paris.lutece.themes</groupId>
-    <artifactId>lutece-site</artifactId>
+    <groupId>fr.paris.lutece</groupId>
+    <artifactId>lutece-guide-kubernetes</artifactId>
     <packaging>lutece-site</packaging>
-    <name>Site Lutece</name>
-    <version>1.0.0</version>
-    <description></description>
-       
+    <name>Lutece guide Kubernetes (multi-instance)</name>
+    <version>1.0.0-SNAPSHOT</version>
+    <description>Site Lutece Forms déployé sur Kubernetes en plusieurs réplicas (session HTTP et cache Lutece dans Hazelcast)</description>
+
+    <properties>
+        <!-- Version de la plateforme Lutece (BOM et starter) : les deux doivent rester identiques.
+             Surchargeable à la construction : mvn ... -Dlutece-platform.version=8.0.0-SNAPSHOT -->
+        <lutece-platform.version>8.0.0-beta-04</lutece-platform.version>
+    </properties>
+
     <repositories>
         <repository>
             <releases>
@@ -23,8 +29,7 @@
             </snapshots>
             <id>lutece</id>
             <name>luteceRepository</name>
-            <url>http://dev.lutece.paris.fr/maven_repository</url>
-            <layout>default</layout>
+            <url>https://dev.lutece.paris.fr/maven_repository</url>
         </repository>
         <repository>
             <snapshots>
@@ -32,16 +37,107 @@
             </snapshots>
             <id>luteceSnapshot</id>
             <name>luteceSnapshot</name>
-            <url>http://dev.lutece.paris.fr/snapshot_repository</url>
+            <url>https://dev.lutece.paris.fr/snapshot_repository</url>
         </repository>
-    </repositories>    
+        <!-- Versions correctives de Hazelcast (5.7.1, 5.7.2...) : publiées sur le dépôt Hazelcast seulement,
+             Maven Central s'arrête à 5.7.0 -->
+        <repository>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <id>hazelcast</id>
+            <name>Hazelcast releases</name>
+            <url>https://repository.hazelcast.com/release</url>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- BOM de la plateforme : version et type de chaque artefact Lutece -->
+            <dependency>
+                <groupId>fr.paris.lutece.starters</groupId>
+                <artifactId>lutece-bom</artifactId>
+                <version>${lutece-platform.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
+        <!-- Socle Forms : lutece-core, forms, genericattributes, workflow... -->
         <dependency>
-            <groupId>fr.paris.lutece</groupId>
-            <artifactId>lutece-core</artifactId>
-            <version>[8.0.0-SNAPSHOT,)</version>
-            <type>lutece-core</type>
+            <groupId>fr.paris.lutece.starters</groupId>
+            <artifactId>forms-starter</artifactId>
+            <version>${lutece-platform.version}</version>
+        </dependency>
+        <!-- Sondes Kubernetes : /health/ready vérifie la base de données -->
+        <dependency>
+            <groupId>fr.paris.lutece.plugins</groupId>
+            <artifactId>plugin-health</artifactId>
+            <type>lutece-plugin</type>
+        </dependency>
+        <!-- Remplace l'exécuteur de daemons du core par Quartz : les daemons déclarés exclusifs
+             (conf/override/profiles-config.properties) ne tournent que sur une instance du cluster -->
+        <dependency>
+            <groupId>fr.paris.lutece.plugins</groupId>
+            <artifactId>plugin-quartz-scheduler</artifactId>
+            <type>lutece-plugin</type>
         </dependency>
     </dependencies>
-</project>
 
+    <profiles>
+        <!-- Packaging multi-instance, actif par défaut : Hazelcast porte la session HTTP (sessionCache-1.0) et le cache
+             JCache de Lutece ; Ehcache, local à la JVM, est retiré du war. Activé par une propriété (et non
+             activeByDefault) pour rester actif quand un autre profil est demandé (-Pcontainer-runtime).
+             Désactivé par -Dlocal. -->
+        <profile>
+            <id>cluster</id>
+            <activation>
+                <property>
+                    <name>!local</name>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.hazelcast</groupId>
+                    <artifactId>hazelcast</artifactId>
+                    <version>5.7.2</version>
+                    <scope>runtime</scope>
+                </dependency>
+                <!-- Taille des caches Lutece sous Hazelcast (maxElementsInMemory), que JCache ne transmet pas -->
+                <dependency>
+                    <groupId>fr.paris.lutece.plugins</groupId>
+                    <artifactId>library-cache-hazelcast</artifactId>
+                    <type>jar</type>
+                </dependency>
+                <!-- Ehcache neutralisé : mêmes coordonnées que la dépendance de lutece-core, scope provided -->
+                <dependency>
+                    <groupId>org.ehcache</groupId>
+                    <artifactId>ehcache</artifactId>
+                    <version>3.12.0</version>
+                    <classifier>jakarta</classifier>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+
+        <!-- Démarrage local en une instance (mvn liberty:run -Dlocal) : Ehcache du core, pas de Hazelcast -->
+        <profile>
+            <id>local</id>
+            <activation>
+                <property>
+                    <name>local</name>
+                </property>
+            </activation>
+            <properties>
+                <!-- liberty:run écrit cluster.config=aucun.xml dans bootstrap.properties : server.xml n'inclut pas
+                     cluster.xml. Une variable liberty.var.* ne suffit pas : elle n'est pas lue pour un include. -->
+                <liberty.bootstrap.cluster.config>aucun.xml</liberty.bootstrap.cluster.config>
+            </properties>
+        </profile>
+    </profiles>
+</project>

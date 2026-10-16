@@ -1,0 +1,36 @@
+# Client Hazelcast du cache applicatif Lutece (lutece.cache.jcache.*, cluster.xml).
+hazelcast-client:
+  # Identique au cluster-name du membre (hazelcast-config-api-mode.yaml).
+  cluster-name: lutece-guide
+  network:
+    # Le client se connecte au membre de son propre pod, puis découvre les autres membres par la topologie du cluster
+    # (routage ALL_MEMBERS, valeur par défaut) : ni API Kubernetes, ni droits.
+    cluster-members:
+      - 127.0.0.1:5701
+    redo-operation: true
+  # Near cache : copie locale des entrées lues, invalidée à chaque modification. Obligatoire : sans lui chaque lecture du
+  # cache est un appel réseau (mesuré : 2,2 req/s contre 37). Une expiration côté membre ne l'invalide pas : sa durée de
+  # vie (600 s) reste sous celle des caches Lutece (3600 s par défaut) et borne une donnée modifiée hors Lutece.
+  near-cache:
+    # Forms modifie les objets qu'il lit dans son cache (listes de questions, d'étapes...) : chaque lecture doit rendre
+    # une copie, comme avec Ehcache. En OBJECT, deux affichages simultanés de la multivue trient la même liste
+    # (ConcurrentModificationException). BINARY coûte environ 5 % de CPU.
+    formsCacheService:
+      in-memory-format: BINARY
+      invalidate-on-change: true
+      time-to-live-seconds: 600
+      max-idle-seconds: 0
+      eviction:
+        eviction-policy: LRU
+        max-size-policy: ENTRY_COUNT
+        size: 20000
+    # Autres caches : OBJECT, sans copie à la lecture (BINARY : un tiers de CPU en plus).
+    "*":
+      in-memory-format: OBJECT
+      invalidate-on-change: true
+      time-to-live-seconds: 600
+      max-idle-seconds: 0
+      eviction:
+        eviction-policy: LRU
+        max-size-policy: ENTRY_COUNT
+        size: 10000

@@ -42,7 +42,7 @@ spec:
             - containerPort: 4317
             - containerPort: 4318
           readinessProbe:
-            exec:
-              command:
-                - cat
-                - /tmp/ready
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 10

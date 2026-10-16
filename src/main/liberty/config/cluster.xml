@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Configuration multi-instance, incluse par server.xml (variable cluster.config).
+     Chaque réplica porte un membre Hazelcast (session HTTP, démarré par sessionCache-1.0) et un client Hazelcast
+     (cache Lutece) connecté à ce membre. -->
+<server>
+    <featureManager>
+        <feature>sessionCache-1.0</feature>
+    </featureManager>
+
+    <!-- Bibliothèque du membre de session : TOUS les jars du war, pas seulement Hazelcast. Les membres hébergent aussi
+         les caches Lutece créés par les clients ; pour migrer une partition (arrêt ou arrivée d'un réplica), ils doivent
+         résoudre les types de ces caches. Avec le seul jar Hazelcast : "Could not resolve type", rééquilibrage abandonné,
+         sessions perdues au redémarrage progressif. Le war est déployé décompressé par configure.sh (Dockerfile). -->
+    <library id="hazelcastSessionLib">
+        <fileset dir="/config/apps/expanded/lutece.war/WEB-INF/lib/" includes="*.jar" />
+    </library>
+    <!-- writeContents=GET_AND_SET_ATTRIBUTES est obligatoire : la valeur par défaut ne réplique pas les beans
+         @SessionScoped modifiés en place (formulaires en plusieurs étapes), perdus au changement de réplica. -->
+    <httpSessionCache libraryRef="hazelcastSessionLib" writeContents="GET_AND_SET_ATTRIBUTES"
+                      uri="file:${server.config.dir}/hazelcast-config-api-mode.yaml" />
+
+    <!-- Cache applicatif Lutece (JCache) : client Hazelcast connecté au membre du réplica. Une <variable> avec value=
+         est une source MicroProfile Config d'ordinal 500, au-dessus de conf/override. -->
+    <variable name="lutece.cache.jcache.cachingprovider" value="com.hazelcast.client.cache.HazelcastClientCachingProvider" />
+    <variable name="lutece.cache.jcache.config.uri" value="file:${server.config.dir}/hazelcast-client-config-api-mode.yaml" />
+</server>

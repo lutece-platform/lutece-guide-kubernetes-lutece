@@ -1,1 +1,21 @@
--Dlog4j.configurationFile=file:/config/log.xml
+# Le provider JCache Hazelcast chargé par sessionCache-1.0 démarre en MEMBRE du cluster. Sans cette propriété système,
+# le provider générique démarre en client. Le cache Lutece nomme HazelcastClientCachingProvider (cluster.xml).
+-Dhazelcast.jcache.provider.type=member
+
+# Service Kubernetes des pods Lutece (port 5701) par lequel le membre découvre les autres pods.
+# Surchargeable par le déploiement : JVM_ARGS="-Dhz.service-name=..." (ajouté après jvm.options).
+-Dhz.service-name=lutece-guide-hazelcast
+
+# Accès de Hazelcast aux API internes de Java (sinon avertissement au démarrage et performances dégradées).
+# Une option par ligne, forme --option=valeur ; la dernière est propre à OpenJ9.
+--add-modules=java.se
+--add-exports=java.base/jdk.internal.ref=ALL-UNNAMED
+--add-opens=java.base/java.lang=ALL-UNNAMED
+--add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+--add-opens=java.management/sun.management=ALL-UNNAMED
+--add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED
+--add-exports=jdk.management/com.ibm.lang.management.internal=ALL-UNNAMED
+
+# Mémoire saturée : la JVM s'arrête (après ses fichiers de diagnostic) au lieu de continuer dans un état instable,
+# et Kubernetes redémarre le conteneur. Avec OpenJ9, ne pas désactiver les agents de dump (-Xdump:none) : l'option en dépend.
+-XX:+ExitOnOutOfMemoryError

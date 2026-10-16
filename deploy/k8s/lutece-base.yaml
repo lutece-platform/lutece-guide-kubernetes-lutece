@@ -1,0 +1,92 @@
+# Ressources du site sans les pods : identifiants de base, profil, compte de service et droits de découverte Hazelcast,
+# Services, volume partagé. À appliquer avant lutece-migration.yaml et lutece.yaml.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+type: Opaque
+stringData:
+  db-user: lutece
+  db-password: some_password
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lutece-config
+data:
+  # Profil MicroProfile Config (%dev.<clé> dans webapp/WEB-INF/conf/override/profiles-config.properties)
+  mp_config_profile: dev
+---
+# Découverte des membres Hazelcast (join "kubernetes") : compte de service des pods, Service sur 5701, droits de lecture
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lutece
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # = hz.service-name (jvm.options)
+  name: lutece-guide-hazelcast
+spec:
+  clusterIP: None
+  selector:
+    app: lutece
+  ports:
+    - name: hazelcast
+      port: 5701
+      targetPort: 5701
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lutece-hazelcast
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints", "pods", "services"]
+    verbs: ["get", "list"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lutece-hazelcast
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: lutece-hazelcast
+subjects:
+  - kind: ServiceAccount
+    name: lutece
+---
+# Index Lucene des réponses Forms, monté par tous les réplicas à la fois
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lutece-lucene
+spec:
+  accessModes: ["ReadWriteMany"]
+  # Sur un vrai cluster : une classe de stockage ReadWriteMany (NFS, CephFS...). Le provisionneur de minikube
+  # (hostPath, un seul nœud) l'accepte.
+  # storageClassName: <classe ReadWriteMany>
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lutece-service
+spec:
+  type: NodePort
+  selector:
+    app: lutece
+  ports:
+    - name: http
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+      nodePort: 31000
+

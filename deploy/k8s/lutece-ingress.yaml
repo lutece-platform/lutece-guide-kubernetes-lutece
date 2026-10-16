@@ -1,0 +1,32 @@
+# Ingress (ingress-nginx, addon "ingress" de minikube). L'affinité de session n'est pas nécessaire : la session HTTP est
+# partagée. Accès : http://lutece.local/lutece/ (ajouter "<minikube ip> lutece.local" dans /etc/hosts).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lutece
+  annotations:
+    # Rejouer une requête sur un autre pod UNIQUEMENT quand la connexion au pod a échoué (pod tué, endpoint pas encore
+    # retiré). Jamais non_idempotent : un POST déjà envoyé (étape de formulaire, action de workflow) ne doit pas être rejoué.
+    nginx.ingress.kubernetes.io/proxy-next-upstream: "error timeout"
+    nginx.ingress.kubernetes.io/proxy-next-upstream-tries: "3"
+    nginx.ingress.kubernetes.io/proxy-next-upstream-timeout: "10"
+    # Délai de connexion court : c'est lui qui borne une bascule après l'arrêt brutal d'un pod (mesuré : p99 2,5 s avec
+    # 2 s, 37 s avec 60 s)
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "2"
+    # Pièces jointes des formulaires
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    # Au-dessus de la page la plus longue (multivue, export PDF)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: lutece.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lutece-service
+                port:
+                  name: http

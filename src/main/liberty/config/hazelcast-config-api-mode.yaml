@@ -1,0 +1,32 @@
+# Membre Hazelcast démarré par sessionCache-1.0 (session HTTP), un par pod Lutece.
+hazelcast:
+  # Propre au site : deux sites d'un même namespace ne doivent pas fusionner leurs clusters.
+  cluster-name: lutece-guide
+  properties:
+    # Arrêt du pod : transférer les partitions (sessions) aux autres membres avant de quitter le cluster.
+    hazelcast.shutdownhook.policy: GRACEFUL
+    # En secondes ; sous le terminationGracePeriodSeconds du pod (60) moins le preStop (10).
+    hazelcast.graceful.shutdown.max.wait: 45
+    # Pas de hook d'arrêt JVM : il fermait le membre pendant qu'OpenLiberty servait encore les requêtes en cours
+    # (erreurs 500 pendant un redémarrage progressif). OpenLiberty ferme le membre en arrêtant sessionCache-1.0.
+    hazelcast.shutdownhook.enabled: false
+    # Near cache des clients (cache Lutece) : invalidations envoyées immédiatement. Groupées par défaut : une
+    # modification met plusieurs secondes à être visible sur les autres réplicas.
+    hazelcast.cache.invalidation.batch.enabled: false
+  network:
+    # Port fixe : le Service Kubernetes et le client du cache Lutece (127.0.0.1:5701) l'attendent.
+    port:
+      auto-increment: false
+      port: 5701
+    join:
+      multicast:
+        enabled: false
+      kubernetes:
+        enabled: true
+        # Pas de namespace : celui du pod. Valeur par défaut dans jvm.options, surchargeable par
+        # JVM_ARGS="-Dhz.service-name=...".
+        service-name: ${hz.service-name}
+        service-port: 5701
+  # Caches Lutece : pas de section "cache:". Durée de vie et taille viennent de Lutece (library-cache-hazelcast pour la
+  # taille). Jamais d'entrée "*" : elle s'applique aussi aux caches de session d'OpenLiberty et l'application ne démarre
+  # plus sur un cluster démarré de zéro (SESN0307E).
