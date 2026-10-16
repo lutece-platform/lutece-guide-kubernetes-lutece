@@ -1,18 +1,24 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <artifactId>lutece-site-pom</artifactId>
         <groupId>fr.paris.lutece.tools</groupId>
-        <version>8.0.0-SNAPSHOT</version>
+        <version>8.0.4</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
-    <groupId>fr.paris.lutece.themes</groupId>
-    <artifactId>lutece-site</artifactId>
+    <groupId>fr.paris.lutece</groupId>
+    <artifactId>lutece-guide-kubernetes</artifactId>
     <packaging>lutece-site</packaging>
-    <name>Site Lutece</name>
-    <version>1.0.0</version>
-    <description></description>
-       
+    <name>Lutece guide Kubernetes (mono-instance)</name>
+    <version>1.0.0-SNAPSHOT</version>
+    <description>Site Lutece Forms déployé sur Kubernetes en une seule instance (cache Ehcache local)</description>
+
+    <properties>
+        <!-- Version de la plateforme Lutece (BOM et starter) : les deux doivent rester identiques.
+             Surchargeable à la construction : mvn ... -Dlutece-platform.version=8.0.0-SNAPSHOT -->
+        <lutece-platform.version>8.0.0-SNAPSHOT</lutece-platform.version>
+    </properties>
+
     <repositories>
         <repository>
             <releases>
@@ -23,8 +29,7 @@
             </snapshots>
             <id>lutece</id>
             <name>luteceRepository</name>
-            <url>http://dev.lutece.paris.fr/maven_repository</url>
-            <layout>default</layout>
+            <url>https://dev.lutece.paris.fr/maven_repository</url>
         </repository>
         <repository>
             <snapshots>
@@ -32,16 +37,35 @@
             </snapshots>
             <id>luteceSnapshot</id>
             <name>luteceSnapshot</name>
-            <url>http://dev.lutece.paris.fr/snapshot_repository</url>
+            <url>https://dev.lutece.paris.fr/snapshot_repository</url>
         </repository>
-    </repositories>    
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- BOM de la plateforme : version et type de chaque artefact Lutece -->
+            <dependency>
+                <groupId>fr.paris.lutece.starters</groupId>
+                <artifactId>lutece-bom</artifactId>
+                <version>${lutece-platform.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
+        <!-- Socle Forms : lutece-core, forms, genericattributes, workflow... -->
         <dependency>
-            <groupId>fr.paris.lutece</groupId>
-            <artifactId>lutece-core</artifactId>
-            <version>[8.0.0-SNAPSHOT,)</version>
-            <type>lutece-core</type>
+            <groupId>fr.paris.lutece.starters</groupId>
+            <artifactId>forms-starter</artifactId>
+            <version>${lutece-platform.version}</version>
+        </dependency>
+        <!-- Sondes Kubernetes : /health/ready vérifie la base de données -->
+        <dependency>
+            <groupId>fr.paris.lutece.plugins</groupId>
+            <artifactId>plugin-health</artifactId>
+            <type>lutece-plugin</type>
         </dependency>
     </dependencies>
 </project>
-

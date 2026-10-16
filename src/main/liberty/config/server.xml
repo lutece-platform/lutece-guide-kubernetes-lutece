@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <server description="lutece server">
-    <!--The Liberty Maven Plugin has generated Liberty features necessary for your application in configDropins/overrides/generated-features.xml-->
     <featureManager>
         <feature>persistence-3.1</feature>
         <feature>beanValidation-3.0</feature>
         <feature>jndi-1.0</feature>
         <feature>jdbc-4.2</feature>
-        <feature>localConnector-1.0</feature>
         <feature>cdi-4.0</feature>
         <feature>servlet-6.0</feature>
         <feature>pages-3.1</feature>
@@ -14,23 +12,62 @@
         <feature>mail-2.1</feature>
         <feature>xmlBinding-4.0</feature>
         <feature>concurrent-3.0</feature>
-        
+        <feature>restfulWS-3.1</feature>
         <feature>mpHealth-4.0</feature>
-        <feature>mpTelemetry-2.0</feature>
-        <feature>ssl-1.0</feature>
-        
-     </featureManager>
+        <feature>mpTelemetry-2.1</feature>
+    </featureManager>
+
     <variable name="http.port" defaultValue="9090" />
     <variable name="https.port" defaultValue="9443" />
+    <applicationManager autoExpand="true" />
 
-    <httpEndpoint host="*" httpPort="${http.port}"
-        httpsPort="${https.port}" id="defaultHttpEndpoint" />
+    <!-- Pool de threads borné à la limite CPU du conteneur : 4 threads pour 2 CPU, 7 pour 4, 10 pour 6.
+         Sans borne, Liberty fait grossir le pool au-delà du quota CPU : les threads en trop se disputent le CPU,
+         chaque requête en coûte deux fois plus et le débit baisse sous charge. La variable d'environnement
+         EXECUTOR_THREADS la surcharge si la limite CPU du déploiement change. -->
+    <variable name="executor.threads" defaultValue="4" />
+    <executor coreThreads="${executor.threads}" maxThreads="${executor.threads}" />
 
-	 <mpTelemetry source="message, trace, ffdc"/>
-	 <application name="lutece" context-root="lutece" location="lutece-site-1.0.0.war" type="war">		
-			<!-- <classloader commonLibraryRef="log4jConfig"/>
-			  <classloader commonLibraryRef="JCacheLib" />-->
-		</application> 	
-		<applicationMonitor dropinsEnabled="false" updateTrigger="disabled" />
+    <httpEndpoint host="*" httpPort="${http.port}" httpsPort="${https.port}" id="defaultHttpEndpoint">
+        <!-- Connexions persistantes gardées plus longtemps que celles du répartiteur (ingress-nginx : 60 s ;
+             Liberty par défaut : 30 s) : sinon un POST envoyé sur une connexion que Liberty vient de fermer reçoit une 502 -->
+        <httpOptions persistTimeout="75s" />
+        <!-- Adresse du client lue dans X-Forwarded-For quand la connexion vient d'un proxy (adresses privées par défaut) :
+             sans cela, tous les usagers ont l'adresse de l'ingress et l'anti-DOS des téléversements les bloque ensemble -->
+        <remoteIp />
+    </httpEndpoint>
 
+    <mpTelemetry source="message, trace, ffdc"/>
+    <!-- En conteneur : les journaux vont sur la console, pas dans messages.log / trace.log -->
+    <logging messageFileName="" traceFileName=""/>
+
+    <application name="lutece" context-root="lutece" location="lutece.war" type="war" />
+    <applicationMonitor dropinsEnabled="false" updateTrigger="mbean" />
+
+    <!-- Uniquement le driver JDBC, pas tous les jars du war -->
+    <library id="jdbcLib">
+        <fileset dir="/config/apps/expanded/lutece.war/WEB-INF/lib/" includes="mariadb-java-client-*.jar"/>
+    </library>
+
+    <!-- Valeurs du poste de développement. En conteneur, chaque variable est surchargée par la variable
+         d'environnement de même nom en majuscules (PORTAL_SERVERNAME, PORTAL_USER, PORTAL_PASSWORD...). -->
+    <variable name="portal.user" defaultValue="lutece" />
+    <variable name="portal.password" defaultValue="some_password" />
+    <variable name="portal.port" defaultValue="3306" />
+    <variable name="portal.dbname" defaultValue="core" />
+    <variable name="portal.serverName" defaultValue="localhost" />
+    <!-- Pool de connexions borné (Liberty en autorise 50) : environ 3 fois executor.threads couvre les requêtes
+         et les daemons -->
+    <variable name="db.pool.max" defaultValue="12" />
+
+    <dataSource jndiName="jdbc/portal">
+        <connectionManager maxPoolSize="${db.pool.max}" />
+        <jdbcDriver libraryRef="jdbcLib"
+                    javax.sql.DataSource="org.mariadb.jdbc.MariaDbDataSource"
+                    javax.sql.ConnectionPoolDataSource="org.mariadb.jdbc.MariaDbDataSource"
+                    javax.sql.XADataSource="org.mariadb.jdbc.MariaDbDataSource"/>
+        <properties url="jdbc:mariadb://${portal.serverName}:${portal.port}/${portal.dbname}"
+                    user="${portal.user}"
+                    password="${portal.password}"/>
+    </dataSource>
 </server>

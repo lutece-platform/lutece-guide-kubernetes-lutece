@@ -1,106 +1,155 @@
+# Site Lutece en une seule instance (cache Ehcache local à la JVM).
+# À appliquer après deploy/k8s/mariadb-manifest.yaml.
 apiVersion: v1
 kind: Secret
 metadata:
   name: db-credentials
-  namespace: default
 type: Opaque
-data:
-  db-user: bHV0ZWNl
-  db-password: c29tZV9wYXNzd29yZA==
-  db-uri: amRiYzpteXNxbDovL21hcmlhZGItc2VydmljZTozMzA2L2NvcmU/YXV0b1JlY29ubmVjdD10cnVlJnVzZVVuaWNvZGU9eWVzJmNoYXJhY3RlckVuY29kaW5nPXV0Zjg=
+stringData:
+  db-user: lutece
+  db-password: some_password
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: lutece-config
-  namespace: default
 data:
+  # Profil MicroProfile Config (%dev.<clé> dans webapp/WEB-INF/conf/override/profiles-config.properties)
   mp_config_profile: dev
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lutece-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: lutece-deployment
-  namespace: default
   labels:
     app: lutece
 spec:
+  # Une seule instance : le cache Ehcache est local à la JVM, deux réplicas garderaient chacun leurs valeurs périmées.
+  # Pour plusieurs réplicas, voir la branche multi-instance de ce dépôt.
+  replicas: 1
+  # Recreate : le volume ReadWriteOnce ne peut pas être monté par deux pods sur deux nœuds, et Liquibase migre la base
+  # au démarrage du nouveau pod
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: lutece
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-      maxSurge: 1
   template:
     metadata:
       labels:
         app: lutece
     spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        # OpenLiberty tourne en utilisateur 1001, groupe 0 : le groupe 0 écrit sur le volume
+        fsGroup: 0
       containers:
-      - name: lutece-container
-        image: rafikyahiaoui/lutece-site-8:1.0.0-SNAPSHOT
-        ports:
-        - containerPort: 9090
-        env:
-        - name: LUTECE_APP_HOSTNAME
-          value: lutece-service
-        - name: MP_CONFIG_PROFILE
-          valueFrom:
-            configMapKeyRef:
-              name: lutece-config
-              key: mp_config_profile
-        - name: PORTAL_USER
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: db-user
-        - name: PORTAL_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: db-password
-        - name: PORTAL_URL
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: db-uri
-        startupProbe:
-          httpGet:
-            path: /health/started
-            port: 9090
-          initialDelaySeconds: 15
-          failureThreshold: 30
-          periodSeconds: 5
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: 9090
-          initialDelaySeconds: 30
-          periodSeconds: 60
-          timeoutSeconds: 8
-          failureThreshold: 3
-        livenessProbe:
-          httpGet:
-            path: /health/live
-            port: 9090
-          initialDelaySeconds: 30
-          periodSeconds: 60
-          timeoutSeconds: 8
-          failureThreshold: 3        
+        - name: lutece-container
+          image: lutece-guide-kubernetes:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9090
+          env:
+            - name: MP_CONFIG_PROFILE
+              valueFrom:
+                configMapKeyRef:
+                  name: lutece-config
+                  key: mp_config_profile
+            # Variables portal.* de server.xml
+            - name: PORTAL_SERVERNAME
+              value: mariadb-service
+            - name: PORTAL_DBNAME
+              value: core
+            - name: PORTAL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: db-user
+            - name: PORTAL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: db-password
+            # Index Lucene des réponses Forms sur le volume : le chemin par défaut (java.io.tmpdir) est perdu au redémarrage
+            - name: JVM_ARGS
+              value: "-Dforms.internalIndexer.lucene.indexPath=/opt/data/lucene/plugins/forms/index"
+            # Télémétrie vers la suite LGTM (deploy/k8s/lgtm.yaml) ; sans endpoint joignable, laisser à true
+            - name: OTEL_SDK_DISABLED
+              value: "false"
+            - name: OTEL_SERVICE_NAME
+              value: lutece-guide
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://lgtm:4317
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1536Mi
+            # Limite CPU au-dessus de la request : la compilation JIT d'OpenJ9 occupe environ un tiers de 2 CPU pendant
+            # les premières minutes sous charge. executor.threads (server.xml) suit la limite : 4 threads pour 2 CPU.
+            limits:
+              cpu: "2"
+              memory: 1536Mi
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: http
+            periodSeconds: 5
+            # 10 min : Liquibase crée ou migre les tables au démarrage. Un pod tué par cette sonde pendant une migration
+            # laisse DATABASECHANGELOGLOCK verrouillé, et les démarrages suivants attendent le verrou sans fin
+            # (mesuré sur minikube : 3 min ne suffisaient pas à créer les tables de forms-starter)
+            failureThreshold: 120
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 10
+            # Un pod chargé répond lentement (la sonde attend un thread du pool borné) : la readiness le retire du
+            # Service, elle ne le tue pas
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            failureThreshold: 6
+            # La liveness détecte un pod figé, pas un pod lent
+            timeoutSeconds: 10
+          lifecycle:
+            # Sortir du Service avant l'arrêt d'OpenLiberty
+            preStop:
+              exec:
+                command: ["sleep", "10"]
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data/lucene
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: lutece-data
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: lutece-service
-  namespace: default
 spec:
   type: NodePort
   selector:
     app: lutece
   ports:
-  - protocol: TCP
-    port: 9090
-    targetPort: 9090
-    nodePort: 31000
+    - protocol: TCP
+      port: 9090
+      targetPort: 9090
+      nodePort: 31000

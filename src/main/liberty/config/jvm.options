@@ -1,1 +1,3 @@
--Dlog4j.configurationFile=file:/config/log.xml
+# Mémoire saturée : la JVM s'arrête (après ses fichiers de diagnostic) au lieu de continuer dans un état instable,
+# et Kubernetes redémarre le conteneur. Avec OpenJ9, ne pas désactiver les agents de dump (-Xdump:none) : l'option en dépend.
+-XX:+ExitOnOutOfMemoryError

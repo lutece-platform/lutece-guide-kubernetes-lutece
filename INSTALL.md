@@ -1,541 +1,414 @@
-#Étapes détaillées pour le déploiement d'une application Lutece sur Kubernetes
+# Déploiement pas à pas d'un site Lutece sur Kubernetes — une instance
 
-Ce guide fournit des instructions pour déployer une application Lutece sur Kubernetes avec un runtime Open Liberty et une base de données Mariadb, incluant l'observabilité via la suite Grafana OTel LGTM.
+Ce guide détaille la construction et le déploiement du site de la branche `mono-instance` : un site Lutece 8 (socle
+Forms) sur Open Liberty, une base MariaDB et l'observabilité Grafana OTel LGTM, sur minikube.
 
 # Table des matières
-- [Guide de Déploiement de Lutece sur Kubernetes](#guide-de-déploiement-de-lutece-sur-kubernetes)
-  - [Objectifs](#objectifs)
-  - [Prérequis](#prérequis)
-  - [Commencer](#commencer)
 
-- [1. Conteneurisation une application lutece](#1-conteneurisation-une-application-lutece)
-  - [1.1. Empaqueter l'application lutece](#11-empaqueter-lapplication-lutece)
-  - [1.2. Créer votre image Docker](#12-créer-votre-image-docker-image-lutece)
-
-- [2. Déploiement de Lutece sur Kubernetes](#2-déploiement-de-lutece-sur-kubernetes)
-  - [2.1. Ressources de déploiement](#21-ressources-de-déploiement)
-    - [2.1.1. Secret : db-credentials](#211-secret--db-credentials)
-    - [2.1.2. ConfigMap : lutece-config](#212-configmap--lutece-config)
-    - [2.1.3. Deployment : lutece-deployment](#213-deployment--lutece-deployment)
-    - [2.1.4. Service : lutece-service](#214-service--lutece-service)
-  - [2.2. Profils de Configuration](#22-profils-de-configuration)
-    - [2.2.1. Utilisation des Profils de Configuration](#221-utilisation-des-profils-de-configuration)
-    - [2.2.2. Format des Propriétés de Configuration par Profil](#222-format-des-propriétés-de-configuration-par-profil)
-  - [2.3. Comment appliquer le déploiement](#23-comment-appliquer-le-déploiement)
-  - [🌐 Accès à l'application Lutece](#-accès-à-lapplication-lutece)
-
-- [3. docker-otel-lg](#3-docker-otel-lg)
-  - [Documentation](#documentation)
-  - [Récupérer l'image Docker](#récupérer-limage-docker)
-  - [Exécuter l'image Docker](#exécuter-limage-docker)
-    - [Configuration](#configuration)
-      - [Activer la journalisation](#activer-la-journalisation)
-  - [Exécuter lgtm dans Kubernetes](#exécuter-lgtm-dans-kubernetes)
-  - [Envoyer des données OpenTelemetry](#envoyer-des-données-opentelemetry)
-  - [Afficher Grafana](#afficher-grafana)
-  - [Travaux Liés](#travaux-liés)
-
-- [4. Déploiement de MariaDB sur Kubernetes avec Scripts d'Initialisation](#4-déploiement-de-mariadb-sur-kubernetes-avec-scripts-dinitialisation)
-  - [Structure des Fichiers](#structure-des-fichiers)
-  - [Configuration et Déploiement](#configuration-et-déploiement)
-  - [Manifeste Kubernetes](#manifeste-kubernetes)
-  - [Accès à MariaDB](#accès-à-mariadb)
-
-- [5. Déploiement de l'application sur Kubernetes avec Open Liberty Operator](#5-déploiement-de-lapplication-sur-kubernetes-avec-open-liberty-operator)
-  - [Installation de l'Opérateur](#installation-de-lopérateur)
-  - [Déploiement](#déploiement)
-  - [🌐 Accès à l'application Lutece](#-accès-à-lapplication-lutece-1)
-
+- [Prérequis](#prérequis)
+- [1. Le site Lutece](#1-le-site-lutece)
+  - [1.1. Le pom : BOM et starter](#11-le-pom--bom-et-starter)
+  - [1.2. La configuration Open Liberty](#12-la-configuration-open-liberty)
+  - [1.3. La configuration Lutece](#13-la-configuration-lutece)
+  - [1.4. Lancer le site en local](#14-lancer-le-site-en-local)
+- [2. Conteneurisation](#2-conteneurisation)
+- [3. Déploiement sur Kubernetes](#3-déploiement-sur-kubernetes)
+  - [3.1. MariaDB](#31-mariadb)
+  - [3.2. Le site](#32-le-site)
+  - [3.3. Profils de configuration](#33-profils-de-configuration)
+  - [3.4. Accès au site](#34-accès-au-site)
+  - [3.5. Mise à jour](#35-mise-à-jour)
+- [4. Observabilité avec Grafana OTel LGTM](#4-observabilité-avec-grafana-otel-lgtm)
+- [5. Déploiement avec Open Liberty Operator](#5-déploiement-avec-open-liberty-operator)
 - [6. Démontage de l'environnement](#6-démontage-de-lenvironnement)
-
-- [📚 Documentation additionnelle](#-documentation-additionnelle)
-
-
-# Guide de Déploiement de Lutece sur Kubernetes
-
-## Objectifs
-Ce guide vous aidera à :
-- Exécuter une application Lutece sur le runtime Open Liberty.
-- Construire l’image Docker de l’application en utilisant les images de conteneur Liberty.
-- Déployer l’application conteneurisée sur un cluster Kubernetes (minikube) avec des manifestes Kubernetes.
-- Déployer une instance MariaDB 10.5 sur Kubernetes avec initialisation d'une base de données pour l'application Lutece.
-- Configurer l’observabilité pour Lutece avec la suite Grafana OTel LGTM.
-- Déployer l’application conteneurisée sur un cluster Kubernetes (minikube) en utilisant l’Opérateur openLiberty.
-
----
+- [Documentation](#documentation)
 
 ## Prérequis
 
-1. Installez Java 17 ou une version ultérieure.
-2. Installez Maven 3.6.0 ou plus.
-3. Vérifiez que Git est installé.
-4. Installez Docker ([documentation Docker](https://docs.docker.com/install/)).
-5. Installez Minikube pour un cluster Kubernetes à nœud unique ([documentation Minikube](https://github.com/kubernetes/minikube#installation)).
-6. Assurez-vous que `kubectl` est installé ([instructions kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/#install-kubectl-on-linux)).
-
----
-
-## Commencer
-
-Clonez le dépôt Git et accédez au projet :
+1. Java 21 et Maven 3.9 ou plus.
+2. Git.
+3. Docker ([documentation](https://docs.docker.com/install/)) ou Podman.
+4. Minikube ([documentation](https://minikube.sigs.k8s.io/docs/start/)), démarré avec au moins 4 CPU et 6 Go :
+   `minikube start --cpus 4 --memory 6g`.
+5. kubectl ([documentation](https://kubernetes.io/docs/tasks/tools/)).
 
 ```sh
-git clone https://github.com/lutece-platform/guide-kubernetes-lutece.git
-cd guide-kubernetes-lutece
-```
-# 1. Conteneurisation une application lutece
-Cette section explique comment builder une image Lutece avec un image de base Open Liberty en utilisant Docker.
-
-Si vous préférez ne pas suivre cette étape, vous pouvez passer directement au chapitre [2. Déploiement de Lutece sur Kubernetes](#2-deploiement-de-lutece-sur-kubernetes), car l'image Docker de Lutece pour ce projet est déjà disponible sur Docker Hub.
-
-**Image lutece**
-
-```sh
-docker pull rafikyahiaoui/lutece-site-8:1.0.0-SNAPSHOT
+git clone -b mono-instance https://github.com/lutece-platform/lutece-guide-kubernetes-lutece.git
+cd lutece-guide-kubernetes-lutece
 ```
 
-## 1.1. Empaqueter l'application lutece 
-Lutece nécessite une base de données pour fonctionner. Avant de lancer l'application, il est donc indispensable d'installer un serveur de base de données, puis de créer la base en utilisant les scripts disponibles dans le répertoire src/sql
+# 1. Le site Lutece
 
-Pour tester le site lutece (guide-kubernetes-lutece) à l'aide de Maven, exécutez le goal Maven suivant pour créer le site lutece et l'exécuter dans Open Liberty 
+Un site Lutece (`packaging lutece-site`) ne contient presque pas de code : il assemble le core et des plugins, et porte
+leur configuration.
+
+## 1.1. Le pom : BOM et starter
+
+```
+lutece-global-pom 8.x  <-  lutece-site-pom 8.x (parent)
+site
+  dependencyManagement : import fr.paris.lutece.starters:lutece-bom
+  dependencies         : fr.paris.lutece.starters:forms-starter + plugin-health
+```
+
+- `lutece-bom` fixe la version et le type de chaque artefact Lutece : un plugin du BOM se déclare sans version.
+- `forms-starter` apporte le core et les plugins d'un site Forms (forms, genericattributes, workflow et leurs modules).
+- `plugin-health` ajoute la vérification de la base à la sonde `/health/ready`.
+
+Le BOM et le starter ont toujours la même version, celle de la propriété `lutece-platform.version`. Les versions
+8.0.0-beta-04 et suivantes de la plateforme portent les correctifs nécessaires aux réglages de ce guide (cache,
+sérialisation, sondes).
+
+## 1.2. La configuration Open Liberty
+
+Les fichiers de `src/main/liberty/config` sont copiés dans `/config` de l'image.
+
+**`server.xml`**
+
+- **Features** : Jakarta EE (servlet, pages, CDI, JPA, JDBC, mail, REST), MicroProfile Config, Health et Telemetry.
+- **Pool de threads borné** :
+  ```xml
+  <variable name="executor.threads" defaultValue="4" />
+  <executor coreThreads="${executor.threads}" maxThreads="${executor.threads}" />
+  ```
+  Liberty dimensionne son pool tout seul et le fait grossir sous charge, au-delà de ce que le quota CPU du conteneur
+  permet : les threads en trop se disputent le CPU, chaque requête en coûte deux fois plus et le débit baisse. Règle :
+  threads = CPU x (1 + attente / calcul), soit 4 threads pour une limite de 2 CPU, 7 pour 4, 10 pour 6. La variable
+  d'environnement `EXECUTOR_THREADS` la surcharge si la limite CPU du déploiement change.
+- **Connexions persistantes** : `<httpOptions persistTimeout="75s"/>`. Liberty ferme une connexion inactive après 30 s,
+  ingress-nginx réutilise les siennes jusqu'à 60 s : un POST envoyé sur une connexion que Liberty vient de fermer reçoit
+  une 502 et n'est pas rejoué.
+- **Adresse du client** : `<remoteIp/>` lit `X-Forwarded-For` quand la connexion vient d'un proxy (adresses privées).
+  Sans lui, tous les usagers ont l'adresse de l'ingress et l'anti-DOS des téléversements du core (un fichier de plus de
+  10 Ko toutes les 2 s par adresse) les bloque ensemble.
+- **Journaux** : `<logging messageFileName="" traceFileName=""/>`, tout va sur la console du conteneur.
+- **Source de données** `jdbc/portal` (driver MariaDB du war) et son pool, borné à 12 connexions (environ 3 fois le
+  nombre de threads). Chaque `${portal.*}` a une valeur par défaut pour le poste de développement ; en conteneur, la
+  variable d'environnement de même nom en majuscules la remplace (`PORTAL_SERVERNAME`, `PORTAL_USER`...).
+
+**`jvm.options`** : `-XX:+ExitOnOutOfMemoryError`. Sur un manque de mémoire, la JVM s'arrête et Kubernetes redémarre le
+conteneur, au lieu de continuer dans un état instable.
+
+**`bootstrap.properties`** : vide. La télémétrie est activée par le déploiement (chapitre 4).
+
+## 1.3. La configuration Lutece
+
+**`webapp/WEB-INF/conf/db.properties`** : Lutece obtient ses connexions de la source de données `jdbc/portal` de Liberty.
+
+```properties
+portal.poolservice=fr.paris.lutece.util.pool.service.ManagedConnectionService
+portal.ds=jdbc/portal
+```
+
+**`webapp/WEB-INF/conf/override/profiles-config.properties`** (lu au-dessus des fichiers du core et des plugins) :
+
+- profils `dev`, `rec`, `prod` (chapitre 3.3) ;
+- `liquibase.enabled.at.startup=true` : les tables sont créées et mises à jour au démarrage ;
+- notifications GRU de `forms-starter` désactivées : aucun service de notification dans ce guide ;
+- cache : les valeurs par défaut du core (10 000 entrées, durée de vie 3600 s, pas de niveau offheap). Une valeur propre
+  à un cache se donne par `core.cache.status.<nom du cache>.maxElementsInMemory` ou `.timeToLiveSeconds`. Pas de
+  `timeToIdleSeconds` : chaque lecture réécrit l'expiration (+19 % de CPU mesuré).
+
+**`webapp/WEB-INF/plugins/plugins.dat`** : sur une base neuve, seuls les plugins listés sont installés.
+
+## 1.4. Lancer le site en local
+
+Lutece a besoin d'une base. Avec un MariaDB local sur le port 3306 :
+
 ```sh
+mariadb -u root -p < deploy/sql/init.sql
 mvn liberty:run
 ```
-Pour consulter la liste complète des goals disponibles, veuillez consulter ce [lien](https://github.com/OpenLiberty/ci.maven)
+
+`init.sql` ne crée que la base `core`. Le site s'y connecte avec l'utilisateur des variables `portal.user` et
+`portal.password` de `server.xml` (`lutece` / `some_password` par défaut), à créer avec ses droits sur `core`, ou à
+remplacer au lancement : `-Dliberty.var.portal.user=... -Dliberty.var.portal.password=...`.
+
+Le serveur est prêt quand s'affiche :
+
+    The defaultServer server is ready to run a smarter planet.
+
+Le site répond sur `http://localhost:9090/lutece/`. `mvn liberty:dev` recharge les modifications à chaud ;
+`mvn liberty:stop` arrête le serveur. Les goals du plugin sont listés sur [ci.maven](https://github.com/OpenLiberty/ci.maven).
+
+# 2. Conteneurisation
+
+L'image part de l'image officielle `icr.io/appcafe/open-liberty:kernel-slim-java21-openj9-ubi-minimal` : `kernel-slim`
+ne contient que le noyau de Liberty, `features.sh` installe les features de `server.xml`.
 
 ```sh
-# lancer lutece en mode developpement
-mvn liberty:dev    
+# War du site (profil container-runtime : journaux Lutece sur la console d'Open Liberty)
+mvn clean lutece:site-assembly -Pcontainer-runtime
 
-# lancer lutece en mode developpement sur un conteneur
-mvn liberty:devc   
+# Image dans le Docker de minikube : pas de registre à configurer
+eval $(minikube docker-env)
+docker build -t lutece-guide-kubernetes:1.0.0-SNAPSHOT .
+docker images lutece-guide-kubernetes
 ```
 
-Une fois que vous voyez le message suivant sur la ligne de commande, l'application lutece est prête 
+Avec Podman : `podman build -t lutece-guide-kubernetes:1.0.0-SNAPSHOT .`, puis
+`minikube image load lutece-guide-kubernetes:1.0.0-SNAPSHOT`.
 
-	The luteceServer server is ready to run a smarter planet
+Le `Dockerfile` :
 
-Pour accéder à l'application lutece
+```dockerfile
+FROM icr.io/appcafe/open-liberty:kernel-slim-java21-openj9-ubi-minimal
+COPY --chown=1001:0 src/main/liberty/config /config/
+RUN features.sh
+COPY --chown=1001:0 target/*.war /config/apps/lutece.war
+RUN configure.sh
+```
 
-	http://localhost:9090/lutece .
-Une fois que vous avez terminé de vérifier l'application lutece, arrêtez l' instance Liberty en appuyant CTRL+C sur la session de ligne de commande dans laquelle vous avez exécuté le service lutece. Vous pouvez également exécuter l' liberty:stop objectif dans une autre session de ligne de commande 
+`configure.sh` déploie le war (`/config/apps/expanded`, où `server.xml` trouve le driver JDBC) et remplit le cache de
+classes partagé d'OpenJ9, qui accélère les démarrages suivants.
 
-	mvn  liberty:stop
-Pour créer le war de votre application lutece, exécutez le goal lutece:war pour créer le .war dans le repertoire target
+# 3. Déploiement sur Kubernetes
 
-	mvn clean lutece:war
-
-## 1.2.	Créer votre image Docker (image lutece)
-Dans ce guide, vous utilisez une image officielle d'IBM Container Registry (ICR), icr.io/appcafe/open-liberty:kernel-slim-java17-openj9-ubi, comme image parent. Cette image est étiquetée avec le mot slim, ce qui signifie que cette image installe l'environnement d'exécution de base de Liberty pour minimiser l'empreinte de votre image en productio
+## 3.1. MariaDB
 
 ```sh
-#créer le war de votre application lutece,
-mvn clean lutece:war     
-
-#Créer l'image
-docker build -t lutece-site-8:1.0.0-SNAPSHOT 
-```
-
-Pour vérifier que l'image est créée, exécutez la docker images commande pour répertorier toutes les images Docker locale
-```sh
-docker images
-```	
-# 2. Deploiement de Lutece sur Kubernetes
-
-Ce chapitre fournit des informations pour déployer l'application Lutece sur Kubernetes en utilisant plusieurs ressources Kubernetes, notamment les Secrets, ConfigMaps, Deployments et Service.
-## 2.1.	Ressources de déploiement
-Le fichier de description des resources kubernetes pour l'application lutece est:
-
-deploy/k8s/lutece.yaml
-
-Ci-dessous la descrition du fichier
-
-### 2.1.1. Secret : `db-credentials`
-
-Ce Secret stocke des informations sensibles pour la connexion à la base de données, encodées en Base64.
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: db-credentials
-  namespace: default
-type: Opaque
-data:
-  db-user: bHV0ZWNl  # 'lutece' encodé en Base64
-  db-password: c29tZV9wYXNzd29yZA==  # 'some_password' encodé en Base64
-  db-uri: amRiYzpteXNxbDovL21hcmlhZGItc2VydmljZTozMzA2L2NvcmU/YXV0b1JlY29ubmVjdD10cnVlJnVzZVVuaWNvZGU9eWVzJmNoYXJhY3RlckVuY29kaW5nPXV0Zjg=
-```
-
-### 2.1.2. ConfigMap : `lutece-config`
-
-Ce ConfigMap contient des paramètres de configuration pour l'application Lutece, notamment le profil de configuration actif.
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: lutece-config
-  namespace: default
-data:
-  mp_config_profile: dev
-```
-
-### 2.1.3. Deployment : `lutece-deployment`
-
-La ressource Deployment gère le déploiement progressif de l'application Lutece en utilisant une stratégie de mise à jour continue (rolling update).
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: lutece-deployment
-  namespace: default
-  labels:
-    app: lutece
-spec:
-  selector:
-    matchLabels:
-      app: lutece
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-      maxSurge: 1
-  template:
-    metadata:
-      labels:
-        app: lutece
-    spec:
-      containers:
-      - name: lutece-container
-        image: lutece-site-8:1.0.0-SNAPSHOT
-        ports:
-        - containerPort: 9090
-        env:
-        - name: LUTECE_APP_HOSTNAME
-          value: lutece-service
-        - name: MP_CONFIG_PROFILE
-          valueFrom:
-            configMapKeyRef:
-              name: lutece-config
-              key: mp_config_profile
-        - name: PORTAL_USER
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: db-user
-        - name: PORTAL_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: db-password
-        - name: PORTAL_URL
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: db-uri
-```
-
-### 2.1.4. Service : `lutece-service`
-
-Le Service expose l’application Lutece en utilisant le type `NodePort` pour l'accès externe.
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: lutece-service
-  namespace: default
-spec:
-  type: NodePort
-  selector:
-    app: lutece
-  ports:
-  - protocol: TCP
-    port: 9090
-    targetPort: 9090
-    nodePort: 31000
-```
-
----
-
-## 2.2. Profils de Configuration
-
-Les **Profils de Configuration** permettent de configurer l'application pour différents environnements et étapes de développement (ex. dev, test, prod) tout en ayant un seul profil actif à la fois. Le profil actif est spécifié à l’aide de la propriété `mp.config.profile`, qui peut être définie dans n’importe quelle source de configuration (ConfigSource).
-
-### 2.2.1.	Utilisation des Profils de Configurationon
-Le profil de configuration actif peut être défini de plusieurs manières dans Kubernetes 
-1. **Dans un ConfigMap** : Le profil peut être stocké dans un ConfigMap, mappé ensuite à une variable d'environnemen.
-
-2. **Directement en tant que variable d'environnement** : Dans le fichier YAML de déploiement, la propriété est définie en tant que variable d'environnement `MP_CONFIG_PROFILE`, compatible avec tous les systèmes d'exploitation.
-
-**Exemple de Configuration Maven** :
-
-Pour lancer l'application en mode Dev avec Maven et le plugin Liberty :
-
-```sh
-mvn liberty:dev -Dliberty.var.mp.config.profile="dev"
-```
-
-Cet argument définit un profil de configuration `dev`.
-
-### 2.2.2.	Format des Propriétés de Configuration par Profil
-
-La propriété `mp.config.profile` peut être utilisée :
-
-- **Au niveau de la propriété** : Les noms de propriétés de configuration peuvent être définis dans le format suivant, pour qu'ils soient appliqués en fonction du profil sélectionné :
-  - `%<mp.config.profile>.<nom original de la propriété>`
-  - Exemple : Avec `mp.config.profile` défini à `dev`, la récupération de la configuration pour `server.host` utilisera la propriété `%dev.server.host`.
-
-- **Au niveau de la source de configuration (ConfigSource)** : Plusieurs fichiers `microprofile-config.properties` peuvent être définis pour différents profils :
-  - Exemple : Avec un fichier `microprofile-config-dev.properties` et `mp.config.profile` défini à `dev`, le fichier sera chargé par-dessus le fichier `microprofile-config.properties`.
-
-Les Profils de Configuration permettent de gérer les paramètres en fonction du stade du projet sans modifier le code ou devoir mettre à jour manuellement de nombreuses valeurs de configuration.
-
----
-
-## 2.3.	Comment appliquer le déploiementn
-Avant de déployer les ressources Lutece, il faut d'abord déployer les ressources MariaDB en exécutant la commande ci-dessous. Pour plus de détails, veuillez vous référer au chapitre suivant. [Déploiement de MariaDB sur Kubernetes avec Scripts d'Initialisation](#4-déploiement-de-mariadb-sur-kubernetes-avec-scripts-dinitialisation)
-```sh	
-kubectl create configmap mariadb-init-sql --from-file=src/sql/init.sql
-kubectl create configmap mariadb-dump-sql --from-file=src/sql/dump.sql
 kubectl apply -f deploy/k8s/mariadb-manifest.yaml
+kubectl rollout status deployment/mariadb
 ```
 
-Pour déployer les ressources lutece sur votre cluster Kubernetes, utilisez la commande suivante:
+`deploy/k8s/mariadb-manifest.yaml` crée :
 
-	kubectl apply -f deploy/k8s/lutece.yaml`
-Cela créera et configurera les ressources spécifiées dans le fichier YAML. L'application Lutece est également configurée pour exporter les données de télémétrie (métriques, traces et journaux) au format OpenTelemetry. La configuration pour l'activation ainsi que l'URL d'exportation des données de télémétrie se trouve dans le fichier src/main/liberty/config/bootstrap.properties
+- un Secret `mariadb-credentials` (utilisateur, mot de passe, mot de passe root) ;
+- un volume de 2 Gi pour les données ;
+- un Deployment `mariadb:11.8` : la base `core` et l'utilisateur `lutece` sont créés au premier démarrage par les
+  variables `MARIADB_*` de l'image ; le serveur tourne en UTC, comme les pods Lutece (Lutece écrit et lit des dates sans
+  fuseau) ;
+- un Service `mariadb-service`.
 
-	otel.sdk.disabled=false	
-	otel.exporter.otlp.endpoint=http://lgtm:4317/
+Mémoire : 512 Mi demandés, 1 Gi au maximum. Les requêtes lourdes du back office (multivue, exports) prennent environ
+40 Mo chacune côté serveur : avec 512 Mi, quelques-unes en parallèle suffisent à faire tuer MariaDB.
 
-## 🌐 Accès à l'application Lutece
+## 3.2. Le site
 
-1. Obtention de l'IP Minikube :
+```sh
+kubectl apply -f deploy/k8s/lutece.yaml
+kubectl rollout status deployment/lutece-deployment --timeout=5m
+```
+
+`deploy/k8s/lutece.yaml` crée :
+
+- **Secret `db-credentials`** : utilisateur et mot de passe de la base.
+- **ConfigMap `lutece-config`** : profil MicroProfile Config.
+- **Volume `lutece-data`** (1 Gi) : index Lucene des réponses Forms. Son chemin par défaut (`java.io.tmpdir`) est perdu
+  à chaque redémarrage du pod.
+- **Deployment `lutece-deployment`**, un réplica.
+- **Service `lutece-service`** : NodePort 31000.
+
+Le Deployment :
+
+```yaml
+replicas: 1
+strategy:
+  type: Recreate
+```
+
+Une seule instance : le cache Ehcache est local à la JVM, deux réplicas garderaient chacun leurs valeurs périmées. Pour
+plusieurs réplicas, voir la branche `multi-instance`. `Recreate` arrête l'ancien pod avant de démarrer le nouveau : le
+volume `ReadWriteOnce` ne se monte pas sur deux nœuds, et Liquibase migre la base au démarrage du nouveau pod.
+
+Variables d'environnement :
+
+| Variable | Valeur | Rôle |
+|---|---|---|
+| `MP_CONFIG_PROFILE` | ConfigMap `lutece-config` | Profil MicroProfile Config |
+| `PORTAL_SERVERNAME`, `PORTAL_DBNAME` | `mariadb-service`, `core` | Variables `portal.*` de `server.xml` |
+| `PORTAL_USER`, `PORTAL_PASSWORD` | Secret `db-credentials` | Identifiants de la base |
+| `JVM_ARGS` | `-Dforms.internalIndexer.lucene.indexPath=/opt/data/lucene/plugins/forms/index` | Index Forms sur le volume |
+| `OTEL_SDK_DISABLED`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT` | `false`, `lutece-guide`, `http://lgtm:4317` | Télémétrie (chapitre 4) |
+
+Ressources, mesurées avec un parcours de formulaire en front office (k6, 20 usagers) :
+
+```yaml
+resources:
+  requests: { cpu: "1", memory: 1536Mi }
+  limits:   { cpu: "2", memory: 1536Mi }
+```
+
+La limite CPU reste au-dessus de la request : pendant les premières minutes sous charge, la compilation JIT d'OpenJ9
+occupe environ un tiers de 2 CPU. En JVM chaude, pod saturé (20 usagers sans pause) : 19,7 requêtes/s, p95 1,5 s,
+98 ms de CPU par requête ; avec des pauses entre les étapes : p95 130-330 ms à 12 requêtes/s. Si la limite CPU
+change, `executor.threads` change avec elle (4 threads pour 2 CPU, 7 pour 4).
+
+Sondes (MicroProfile Health) :
+
+| Sonde | Chemin | Réglage | Pourquoi |
+|---|---|---|---|
+| startup | `/health/started` | 120 x 5 s (10 min), délai 5 s | Liquibase crée ou migre les tables au démarrage : 3 min ne suffisaient pas pour créer celles de `forms-starter` sur minikube |
+| readiness | `/health/ready` | 10 s, délai 5 s | Vérifie la base ; un pod chargé répond lentement (la sonde attend un thread du pool borné) : la readiness le retire du Service, elle ne le tue pas |
+| liveness | `/health/live` | 10 s, délai 10 s, 6 échecs | Détecte un pod figé, pas un pod lent |
+
+`preStop` (`sleep 10`) laisse le pod sortir du Service avant l'arrêt d'Open Liberty.
+
+Un pod tué pendant une migration Liquibase (sonde de démarrage trop courte, limite mémoire, suppression du pod) laisse
+la table `DATABASECHANGELOGLOCK` verrouillée : les démarrages suivants affichent `Waiting for changelog lock....` sans
+fin. Libérer le verrou, puis redémarrer le pod :
+
+```sh
+kubectl exec deployment/mariadb -- mariadb -u lutece -psome_password core -e "UPDATE DATABASECHANGELOGLOCK SET LOCKED=0, LOCKGRANTED=NULL, LOCKEDBY=NULL"
+kubectl rollout restart deployment/lutece-deployment
+```
+
+## 3.3. Profils de configuration
+
+Un profil MicroProfile Config adapte la configuration à un environnement (dev, rec, prod) avec un seul profil actif.
+Le profil vient de la variable d'environnement `MP_CONFIG_PROFILE` (ConfigMap `lutece-config`).
+
+- **Par propriété** : `%<profil>.<clé>` ne s'applique qu'avec ce profil. Avec `dev` actif, `daemon.indexer.onstartup`
+  prend la valeur de `%dev.daemon.indexer.onstartup`.
+- **Par fichier** : un fichier `microprofile-config-<profil>.properties` est lu par-dessus `microprofile-config.properties`.
+
+En local : `mvn liberty:dev -Dliberty.var.mp.config.profile=dev`.
+
+## 3.4. Accès au site
+
 ```sh
 minikube ip
 ```
 
-2. Accès à l'interface d'administration :
-- URL : `http://<minikube_ip>:31000/lutece/jsp/admin/AdminLogin.jsp`
-- Identifiants : admin/adminadmin
+- Site : `http://<minikube ip>:31000/lutece/`
+- Back office : `http://<minikube ip>:31000/lutece/jsp/admin/AdminLogin.jsp` (admin / adminadmin, mot de passe à
+  changer à la première connexion)
 
-
-# 3.	docker-otel-lg
-Une solution backend OpenTelemetry dans une image Docker.![Composants inclus dans l'image Docker : OpenTelemetry Collector, Prometheus, Tempo, Loki, Grafana](img/overview.png)
-
-L’image Docker `grafana/otel-lgtm` est une solution backend open-source pour OpenTelemetry, adaptée aux environnements de développement, de démonstration et de test. Pour une solution prête pour la production, permettant de surveiller des applications et de minimiser le MTTR (temps moyen de résolution) avec OpenTelemetry et Prometheus, essayez [Grafana Cloud Application Observability](https://grafana.com/products/cloud/application-observability/).
-
-## Documentationon
-* Article de blog : [Un backend OpenTelemetry dans une image Docker : Présentation de grafana/otel-lgtm](https://grafana.com/blog/2024/03/13/an-opentelemetry-backend-in-a-docker-image-introducing-grafana/otel-lgtm/)
-
-## Récupérer l'image Docker
-
-L’image Docker est disponible sur Docker Hub : <https://hub.docker.com/r/grafana/otel-lgtm>
-
-## Exécuter l'image Dockerer
-
-A voir..................
-
-### Configurationnn
-
-#### Activer la journalisationnn
-
-Vous pouvez activer la journalisation pour le dépannage :
-
-
-	| Environment Variable   | Enable Logging in       |
-	|------------------------|-------------------------|
-	| ENABLE_LOGS_GRAFANA    | Grafana                 |
-	| ENABLE_LOGS_LOKI       | Loki                    |
-	| ENABLE_LOGS_PROMETHEUS | Prometheus              |
-	| ENABLE_LOGS_TEMPO      | Tempo                   |
-	| ENABLE_LOGS_OTELCOL    | OpenTelemetry Collector |
-	| ENABLE_LOGS_ALL        | all of the above        |
-
-Cela n'a rien à voir avec les journaux d'application, qui sont collectés par OpenTelemetry.
-
-## Exécuter lgtm dans Kubernetes
+Le back office envoie l'en-tête CSP `upgrade-insecure-requests` : sur une autre adresse que `localhost`, le navigateur
+passe ses requêtes en HTTPS. Pour un test en HTTP :
 
 ```sh
-# Créer les ressources k8s
-kubectl apply -f deploy/k8s/lgtm.yaml
+kubectl port-forward service/lutece-service 9090:9090
+```
 
-# Redirection de portt
+puis `http://localhost:9090/lutece/`.
+
+## 3.5. Mise à jour
+
+Nouvelle image : reconstruire avec un nouveau tag, le mettre dans `deploy/k8s/lutece.yaml`, puis
+`kubectl apply -f deploy/k8s/lutece.yaml`. Liquibase applique les scripts de mise à jour au démarrage.
+
+Après une modification de la base hors de Lutece (script SQL, restauration), vider les caches depuis le back office
+(gestion des caches) : sinon les anciennes valeurs restent servies jusqu'à la fin de leur durée de vie (3600 s).
+
+# 4. Observabilité avec Grafana OTel LGTM
+
+![Composants inclus : OpenTelemetry Collector, Prometheus, Tempo, Loki, Grafana](img/overview.png)
+
+L'image `grafana/otel-lgtm` réunit un collecteur OpenTelemetry, Prometheus, Tempo, Loki et Grafana, pour le
+développement et les tests ([présentation](https://grafana.com/blog/2024/03/13/an-opentelemetry-backend-in-a-docker-image-introducing-grafana/otel-lgtm/)).
+
+```sh
+kubectl apply -f deploy/k8s/lgtm.yaml
 kubectl port-forward service/lgtm 3000:3000
 ```
-## Envoyer des données OpenTelemetry
 
-Aucune configuration n'est nécessaire : l'image Docker fonctionne avec les paramètres par défaut d'OpenTelemetry.
+Grafana : `http://localhost:3000` (admin / admin).
 
-export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+Le site exporte traces, métriques et journaux (`<mpTelemetry source="message, trace, ffdc"/>` dans `server.xml`).
+Liberty désactive l'export par défaut ; le Deployment l'active :
 
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-
-## Afficher Grafana
-
-Connectez-vous à http://localhost:3000 avec l'utilisateur admin et le mot de passe admin.
-
-## Travaux Liés
-
- * Metrics, Logs, Traces and Profiles in Grafana: <https://github.com/grafana/intro-to-mltp>
-
-
-# 4. Déploiement de MariaDB sur Kubernetes avec Scripts d'Initialisation
-
-Ce projet déploie une instance MariaDB 10.5 sur un cluster Kubernetes. Lors du premier démarrage, deux fichiers SQL sont exécutés automatiquement pour initialiser la base de données et insérer des données de départ. 
-
-## Structure des Fichiers
-
-- `init.sql` : Script d'initialisation pour créer la base de données et les utilisateurs.
-- `dump.sql` : Dump SQL contenant la structure et les données initiales pour la base.
-
-## Configuration et Déploiement
-
-1. **Créer les ConfigMaps** : Créez des ConfigMaps pour `init.sql` et `dump.sql` en exécutant les commandes suivantes 
-```bash   
-    kubectl create configmap mariadb-init-sql --from-file=src/sql/init.sql
-    kubectl create configmap mariadb-dump-sql --from-file=src/sql/dump.sql
-```  
-2. **Appliquer le Manifeste Kubernetes** : Utilisez le manifeste `mariadb-manifest.yaml` pour déployer MariaDB sur Kubernetes
-
-```bash
-    kubectl apply -f deploy/k8s/mariadb-manifest.yaml  ```
-```
-## Manifeste Kubernetes
-
-Le fichier `mariadb-manifest.yaml` configure :
-
-- Un **PersistentVolumeClaim** (PVC) pour stocker les données de la base de données.
-- Deux **ConfigMaps** pour les scripts SQL d'initialisation.
-- Un **Deployment** pour MariaDB avec les scripts SQL montés dans `/docker-entrypoint-initdb.d`.
-- Un **Service** pour exposer MariaDB à l'intérieur du cluster Kubernetes.
-
-## Accès à MariaDB
-
-Vous pouvez accéder à MariaDB en utilisant son **Service** dans Kubernetes.
-
-```sh
-kubectl exec -it <mariadb-pod-name> -- mysql -u lutece -psome_password
+```yaml
+- name: OTEL_SDK_DISABLED
+  value: "false"
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: http://lgtm:4317
 ```
 
-# 5. Déploiement de l'application sur Kubernetes avec Open Liberty Operator
+Sans collecteur joignable, laisser `OTEL_SDK_DISABLED` à `true` : l'exporteur journaliserait une erreur à chaque envoi.
+Ces valeurs ne vont pas dans `bootstrap.properties` ni `server.env` : elles l'emporteraient sur les variables
+d'environnement du déploiement.
 
-Cette section présente **une alternative au déploiement initial de Lutece qui utilisait directement les ressources gérées nativement par Kubernetes**. Ce chapitre vous permettra de déployer le site Lutece en utilisant l’Open Liberty Operator, qui facilite le packaging, le déploiement et la gestion des applications Open Liberty sur des clusters Kubernetes. Cet opérateur surveille les ressources Open Liberty et crée divers composants Kubernetes, tels que des déploiements, des services et des routes, en fonction des configurations. Il garantit également la mise à jour des ressources selon l'état souhaité de l'application, en comparant et en synchronisant les états actuel et attendu. [OpenLiberty Operator](https://github.com/OpenLiberty/open-liberty-operator).
+Journaux des composants LGTM, pour le dépannage : variables `ENABLE_LOGS_GRAFANA`, `ENABLE_LOGS_LOKI`,
+`ENABLE_LOGS_PROMETHEUS`, `ENABLE_LOGS_TEMPO`, `ENABLE_LOGS_OTELCOL` ou `ENABLE_LOGS_ALL`.
 
-## Installation de l’Opérateur
+# 5. Déploiement avec Open Liberty Operator
 
-Avant de déployer votre site, vous devez installer le cert-manager et l'Open Liberty Operator. Pour plus de détails, consultez les instructions d’installation.
+L'[Open Liberty Operator](https://github.com/OpenLiberty/open-liberty-operator) déploie et gère une application Open
+Liberty à partir d'une ressource `OpenLibertyApplication` : il crée le Deployment, le Service et la route, et les garde
+dans l'état décrit. C'est une alternative à `deploy/k8s/lutece.yaml` : n'appliquer que l'un des deux.
 
-Pour commencer, installez le cert-manager sur votre cluster Kubernetes en exécutant la commande suivante :
+## Installation de l'opérateur
 
 ```sh
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.3/cert-manager.yaml
-```
-Ensuite, installez les Custom Resource Definitions (CRDs) pour l'Open Liberty Operator en exécutant la commande suivante :
-
-```sh
 kubectl apply --server-side -f https://raw.githubusercontent.com/OpenLiberty/open-liberty-operator/main/deploy/releases/1.2.1/kubectl/openliberty-app-crd.yaml
-```
-Enfin, exécutez les commandes suivantes pour installer l'Opérateur :
 
-```sh
+OPERATOR_NAMESPACE=default
+WATCH_NAMESPACE='""'
 curl -L https://raw.githubusercontent.com/OpenLiberty/open-liberty-operator/main/deploy/releases/1.2.1/kubectl/openliberty-app-operator.yaml \
   | sed -e "s/OPEN_LIBERTY_WATCH_NAMESPACE/${WATCH_NAMESPACE}/" \
   | kubectl apply -n ${OPERATOR_NAMESPACE} -f -
-```
-Pour vérifier que l’Open Liberty Operator a bien été installé, exécutez la commande suivante pour afficher toutes les ressources d’API prises en charge et disponibles via l'Open Liberty Operator :
 
-```sh
 kubectl api-resources --api-group=apps.openliberty.io
 ```
 
-Recherchez la sortie suivante, qui affiche les Custom Resource Definitions (CRDs) pouvant être utilisées par l'Open Liberty Operator :
+La dernière commande liste les ressources de l'opérateur :
 
-```sh
+```
 NAME                      SHORTNAMES         APIVERSION               NAMESPACED   KIND
 openlibertyapplications   olapp,olapps       apps.openliberty.io/v1   true         OpenLibertyApplication
 openlibertydumps          oldump,oldumps     apps.openliberty.io/v1   true         OpenLibertyDump
 openlibertytraces         oltrace,oltraces   apps.openliberty.io/v1   true         OpenLibertyTrace
 ```
-Chaque Custom Resource Definition (CRD) définit un type d'objet pouvant être utilisé, comme spécifié dans l'exemple précédent par la valeur KIND. La valeur SHORTNAME indique des noms alternatifs que vous pouvez utiliser dans la configuration pour faire référence à un type d'objet. Par exemple, vous pouvez référencer le type d'objet OpenLibertyApplication en utilisant l'un de ses noms courts spécifiés, tel que "olapps".
 
-La CRD openlibertyapplications définit un ensemble de configurations pour déployer une application basée sur Open Liberty, incluant l'image de l'application, le nombre d'instances et les paramètres de stockage. L'Open Liberty Operator surveille les modifications apportées aux instances du type d'objet OpenLibertyApplication et crée des ressources Kubernetes basées sur la configuration définie dans la CRD.
+## Déploiement
 
-## Déploiement :
 ```sh
+kubectl apply -f deploy/k8s/mariadb-manifest.yaml
 kubectl apply -f deploy/openLibertyOperator/lutece-liberty-operator.yaml
-```
-Ensuite, exécutez la commande suivante pour afficher vos ressources OpenLibertyApplications nouvellement créées :
-
-```sh
 kubectl get OpenLibertyApplications
+kubectl port-forward svc/lutece 9090:9090
 ```
-## 🌐 Accès à l'application Lutece
 
-```sh
-kubectl port-forward svc/lutece 9443
-```
-Visitez le microservice à l'adresse suivante : 
-
-	https://localhost:9443/lutece/jsp/admin/AdminLogin.jsp
+Le site répond sur `http://localhost:9090/lutece/`. La ressource reprend l'image, les variables, les ressources et les
+sondes de `deploy/k8s/lutece.yaml`.
 
 # 6. Démontage de l'environnement
 
-Lorsque vous n'avez plus besoin de votre application déployé, vous pouvez supprimer toutes les ressources en exécutant les commandes suivantes
-
 ```sh
-kubectl delete -f deploy/openLibertyOperator/lutece-liberty-operator.yaml
+kubectl delete -f deploy/openLibertyOperator/lutece-liberty-operator.yaml   # si l'opérateur a été utilisé
 kubectl delete -f deploy/k8s/lutece.yaml
-kubectl delete -f deploy/k8s/mariadb-manifest.yaml
 kubectl delete -f deploy/k8s/lgtm.yaml
-
+kubectl delete -f deploy/k8s/mariadb-manifest.yaml
 ```
-Pour désinstaller Open Liberty Operator et le cert-manager, exécutez les commandes suivantes 
+
+Désinstallation de l'opérateur et de cert-manager :
 
 ```sh
 OPERATOR_NAMESPACE=default
 WATCH_NAMESPACE='""'
-
 curl -L https://raw.githubusercontent.com/OpenLiberty/open-liberty-operator/main/deploy/releases/1.2.1/kubectl/openliberty-app-operator.yaml \
   | sed -e "s/OPEN_LIBERTY_WATCH_NAMESPACE/${WATCH_NAMESPACE}/" \
   | kubectl delete -n ${OPERATOR_NAMESPACE} -f -
-
-curl -L https://raw.githubusercontent.com/OpenLiberty/open-liberty-operator/main/deploy/releases/1.2.1/kubectl/openliberty-app-rbac-watch-all.yaml \
-  | sed -e "s/OPEN_LIBERTY_OPERATOR_NAMESPACE/${OPERATOR_NAMESPACE}/" \
-  | kubectl delete -f -
-
 kubectl delete -f https://raw.githubusercontent.com/OpenLiberty/open-liberty-operator/main/deploy/releases/1.2.1/kubectl/openliberty-app-crd.yaml
-
 kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.3/cert-manager.yaml
 ```
 
-Effectuez les étapes suivantes pour ramener votre environnement à un état propre
+Retour à un environnement propre :
 
 ```sh
-#Point the Docker daemon back to your local machine:
 eval $(minikube docker-env -u)
-
-#Stop your Minikube cluster:
 minikube stop
-
-#Delete your cluster:
 minikube delete
 ```
 
+Sur minikube, supprimer un volume ne supprime pas ses données : elles restent dans
+`/tmp/hostpath-provisioner/<namespace>/<nom du volume>` du nœud, et un nouveau volume de même nom dans le même namespace
+les retrouve (la base n'est alors pas neuve). Pour repartir d'une base vide sans supprimer le cluster :
 
-# 📚 Documentation additionnelle
+```sh
+minikube ssh -- sudo rm -rf /tmp/hostpath-provisioner/default/mariadb-pvc
+```
 
-- [Repository Guide Kubernetes Lutece ](https://github.com/lutece-platform/lutece-guide-kubernetes-lutece)
-- [Documentation microprofile telemetry 2.0](https://microprofile.io/specifications/telemetry/2-0/)
-- [Documentation microprofile config api 3.1](https://microprofile.io/specifications/config/3-1/)
-- [Documentation microprofile health 4.0 ](https://microprofile.io/specifications/health/4-0/)
-- [Documentation OpenTelemetry](https://opentelemetry.io/docs/)
-- [Documentation Grafana](https://grafana.com/docs/)
-- [Documentation Lutece](https://lutece.paris.fr/support/)
-- [Documentation openLiberty kuberntes](https://openliberty.io/guides/kubernetes-microprofile-config.html)
-- [Documentation openLiberty kuberntes Operator](https://openliberty.io/guides/openliberty-operator-intro.html)
-- [Repo Open Liberty Operator](https://github.com/OpenLiberty/open-liberty-operator)
-- [Quickest way to learn all things Open Liberty, and beyond](https://openliberty.io/guides/)
+# Documentation
+
+- [Dépôt du guide](https://github.com/lutece-platform/lutece-guide-kubernetes-lutece)
+- [Lutece](https://lutece.paris.fr/support/) ; [plateforme Lutece : BOM et starters](https://github.com/lutece-platform/lutece-platform)
+- [MicroProfile Config 3.1](https://microprofile.io/specifications/config/3-1/),
+  [Health 4.0](https://microprofile.io/specifications/health/4-0/),
+  [Telemetry 2.0](https://microprofile.io/specifications/telemetry/2-0/)
+- [Open Liberty sur Kubernetes](https://openliberty.io/guides/kubernetes-microprofile-config.html),
+  [Open Liberty Operator](https://openliberty.io/guides/openliberty-operator-intro.html),
+  [guides Open Liberty](https://openliberty.io/guides/)
+- [OpenTelemetry](https://opentelemetry.io/docs/), [Grafana](https://grafana.com/docs/)

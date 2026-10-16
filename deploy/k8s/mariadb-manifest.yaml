@@ -1,34 +1,32 @@
+# Base MariaDB du site. La base "core" et l'utilisateur "lutece" sont créés par l'image au premier démarrage ;
+# les tables sont créées par Liquibase au démarrage de Lutece.
 apiVersion: v1
 kind: Secret
 metadata:
   name: mariadb-credentials
-  namespace: default
 type: Opaque
-data:
-  db-user: bHV0ZWNl
-  db-password: c29tZV9wYXNzd29yZA==
-  db-rootpassword: cm9vdHBhc3N3b3Jk
-
+stringData:
+  db-user: lutece
+  db-password: some_password
+  db-rootpassword: rootpassword
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: mariadb-pvc
-  namespace: default
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
-
+      storage: 2Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mariadb
-  namespace: default
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app: mariadb
@@ -40,55 +38,58 @@ spec:
         app: mariadb
     spec:
       containers:
-      - name: mariadb
-        image: mariadb:10.5
-        env:
-          - name: MYSQL_ROOT_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: mariadb-credentials
-                key: db-rootpassword
-          - name: MYSQL_DATABASE
-            value: "core"
-          - name: MYSQL_USER
-            valueFrom:
-              secretKeyRef:
-                name: mariadb-credentials
-                key: db-user
-          - name: MYSQL_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: mariadb-credentials
-                key: db-password
-        ports:
-          - containerPort: 3306
-            name: mariadb
-        volumeMounts:
-          - name: data
-            mountPath: /var/lib/mysql
-          - name: init-sql
-            mountPath: /docker-entrypoint-initdb.d/init.sql
-            subPath: init.sql
-          - name: dump-sql
-            mountPath: /docker-entrypoint-initdb.d/dump.sql
-            subPath: dump.sql
+        - name: mariadb
+          image: mariadb:11.8
+          args:
+            # Lutece écrit et lit des dates sans fuseau : le serveur de base et les pods Lutece restent sur le même (UTC)
+            - --default-time-zone=+00:00
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_unicode_ci
+          env:
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mariadb-credentials
+                  key: db-rootpassword
+            - name: MARIADB_DATABASE
+              value: core
+            - name: MARIADB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mariadb-credentials
+                  key: db-user
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mariadb-credentials
+                  key: db-password
+          ports:
+            - containerPort: 3306
+              name: mariadb
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            # Requêtes lourdes du back office (multivue, exports) : environ 40 Mo chacune ; 512 Mi ne suffisent pas
+            limits:
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect", "--innodb_initialized"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: mariadb-pvc
-        - name: init-sql
-          configMap:
-            name: mariadb-init-sql
-        - name: dump-sql
-          configMap:
-            name: mariadb-dump-sql
-
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: mariadb-service
-  namespace: default
 spec:
   ports:
     - port: 3306
