@@ -168,6 +168,20 @@ Mesures de ce guide sur minikube (k6, 20 usagers qui enchaînent sans pause les 
 p95 de 130 à 330 ms à 12 requêtes/s. Pendant les premières minutes, la compilation JIT rallonge nettement les temps de
 réponse : mesurer après une chauffe. Premier démarrage sur une base neuve : 5 à 8 min (création des tables).
 
+Test long, une déclaration en onze étapes (formulaire et workflow construits par la suite e2e `FormsDeontologieSuite` de
+lutece-e2e : sept rubriques « Oui / Non », 20 % des déclarants déclarent une rubrique et la moitié d'entre eux ajoutent une
+seconde déclaration), k6 à débit d'arrivée fixe, 1 à 3 s de réflexion par étape, 10 min par palier :
+
+| Déclarations/min | Requêtes/s | p50 | p95 | p99 | Déclarations échouées | CPU |
+|---|---|---|---|---|---|---|
+| 30 | 5,6 | 83 ms | 219 ms | 319 ms | 0 | 0,54 cœur |
+| 60 | 11,1 | 76 ms | 472 ms | 1,4 s | 0 | 0,95 cœur |
+| 90 | 13,8 | 3,3 s | 7,5 s | 8,8 s | 4 % | 1,87 cœur (saturé) |
+| 120 | 14,8 | 6,6 s | 10 s | 11 s | 25 % | 1,96 cœur |
+
+Un pod de 2 CPU tient donc entre 60 et 90 déclarations de ce type par minute. Au-delà, la branche `multi-instance` répartit
+la charge sur plusieurs réplicas (0 échec à 150 déclarations/min avec 2 réplicas).
+
 ### Sondes
 
 | Sonde | Chemin | Réglage |
