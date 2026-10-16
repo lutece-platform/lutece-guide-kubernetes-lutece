@@ -370,8 +370,10 @@ Le site répond sur `http://lutece.local/lutece/`.
 | `proxy-body-size` | `20m` | Pièces jointes des formulaires |
 | `proxy-read-timeout` | `120` | Au-dessus de la page la plus longue (multivue, export PDF) |
 
-L'affinité de session n'est pas nécessaire. Si elle est ajoutée pour limiter les changements de pod, son cookie ne doit
-pas s'appeler `JSESSIONID` : il entrerait en conflit avec celui d'Open Liberty.
+L'ingress pose une affinité de session (`affinity: cookie`, cookie `lutece-route`) : la session reste partagée, un pod
+perdu n'interrompt pas ses usagers, mais une requête qui suit une redirection n'arrive plus sur l'autre pod avant
+l'écriture de la session (jeton de sécurité périmé sur les actions du back office), et chaque requête coûte 12 à 21 % de
+CPU en moins (README). Le cookie ne doit pas s'appeler `JSESSIONID` : il entrerait en conflit avec celui d'Open Liberty.
 
 Comme pour une instance, le back office exige HTTPS sur une autre adresse que `localhost` : pour un test en HTTP,
 `kubectl port-forward service/lutece-service 9090:9090` et `http://localhost:9090/lutece/`.

@@ -1,5 +1,6 @@
-# Ingress (ingress-nginx, addon "ingress" de minikube). L'affinité de session n'est pas nécessaire : la session HTTP est
-# partagée. Accès : http://lutece.local/lutece/ (ajouter "<minikube ip> lutece.local" dans /etc/hosts).
+# Ingress (ingress-nginx, addon "ingress" de minikube), avec affinité de session : la session HTTP est partagée (un pod
+# perdu, ses usagers continuent sur l'autre), mais une requête qui suit une redirection peut arriver sur l'autre pod avant
+# que la session soit écrite (actions du back office), et rester sur un pod coûte moins de CPU (README). Accès : http://lutece.local/lutece/ (ajouter "<minikube ip> lutece.local" dans /etc/hosts).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -17,6 +18,11 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "20m"
     # Au-dessus de la page la plus longue (multivue, export PDF)
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    # Affinité de session par un cookie de l'ingress, jamais nommé JSESSIONID (celui d'Open Liberty) ; balanced : un pod
+    # ajouté reçoit les nouveaux usagers
+    nginx.ingress.kubernetes.io/affinity: cookie
+    nginx.ingress.kubernetes.io/affinity-mode: balanced
+    nginx.ingress.kubernetes.io/session-cookie-name: lutece-route
 spec:
   ingressClassName: nginx
   rules:

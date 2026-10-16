@@ -4,8 +4,9 @@
 Ce guide déploie un site Lutece 8 (socle Forms) sur Kubernetes, avec le runtime Open Liberty, une base MariaDB et
 l'observabilité de la suite Grafana OTel LGTM.
 
-Cette branche (`multi-instance`) fait tourner le site en **plusieurs réplicas** derrière un répartiteur, sans affinité
-de session : la session HTTP et le cache Lutece sont partagés par Hazelcast, embarqué dans chaque pod. Pour une seule
+Cette branche (`multi-instance`) fait tourner le site en **plusieurs réplicas** derrière un répartiteur : la session HTTP
+et le cache Lutece sont partagés par Hazelcast, embarqué dans chaque pod. L'affinité de session de l'ingress est
+recommandée, pas indispensable (voir les mesures). Pour une seule
 instance, plus simple, voir la branche
 [`mono-instance`](https://github.com/lutece-platform/lutece-guide-kubernetes-lutece/tree/mono-instance).
 
@@ -157,7 +158,25 @@ d'un formulaire) :
 | JVM chaude | 52,3 | 98 ms | 329 ms | 0 sur 2 369 parcours | 58 ms |
 | Redémarrage progressif des 2 pods sous charge | 31,6 | 221 ms | 1,1 s | 1 sur 2 390 parcours | |
 
-Le seul échec est un POST en cours sur le pod arrêté, que l'ingress ne rejoue pas. Parcours Playwright en changeant de
+Le seul échec est un POST en cours sur le pod arrêté, que l'ingress ne rejoue pas.
+
+Test long, une déclaration en onze étapes (formulaire et workflow construits par la suite e2e `FormsDeontologieSuite` de
+lutece-e2e : sept rubriques « Oui / Non », 20 % des déclarants déclarent une rubrique et la moitié d'entre eux ajoutent une
+seconde déclaration), k6 à débit d'arrivée fixe, 1 à 3 s de réflexion par étape, 10 min par palier, pods de 1 / 2 CPU :
+
+| Déclarations/min | 1 réplica (branche `mono-instance`) | 2 réplicas, ingress sans affinité | 2 réplicas, ingress avec affinité |
+|---|---|---|---|
+| 30 | p95 219 ms, 0 échec | p95 277 ms, 0 échec | |
+| 60 | p95 472 ms, p99 1,4 s, 0 échec | p95 265 ms, p99 391 ms, 0 échec | |
+| 90 | p50 3,3 s, 4 % de déclarations échouées (saturé) | p95 372 ms, p99 694 ms, 0 échec, 116 ms CPU / requête | p95 289 ms, p99 530 ms, 0 échec, 92 ms CPU / requête |
+| 120 | p50 6,6 s, 25 % échouées | p95 390 ms, p99 627 ms, 0 échec | |
+| 150 | | p95 708 ms, p99 977 ms, 0 échec, 111 ms CPU / requête | p95 542 ms, p99 777 ms, 0 échec, 98 ms CPU / requête |
+
+Chaque réponse enregistrée est retrouvée en base. Sans affinité, chaque requête peut changer de pod : les étapes d'un
+formulaire passent (elles répondent sans redirection), mais une requête qui suit une redirection peut arriver sur l'autre
+pod avant qu'Open Liberty ait écrit la session (il l'écrit à la fin de la requête, après l'envoi de la redirection) : une
+action du back office voit alors un jeton de sécurité périmé (« Invalid security token »). Avec l'affinité (cookie de
+l'ingress, nouveau à chaque déclaration), la charge reste répartie à parts égales et le CPU par requête baisse de 12 à 21 %. Parcours Playwright en changeant de
 pod à chaque requête : formulaire en deux étapes avec pièce jointe, 6 numérotations simultanées (6 numéros distincts),
 session du back office sur 6 pages protégées : tous réussis.
 
