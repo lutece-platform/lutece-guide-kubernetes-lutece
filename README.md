@@ -142,7 +142,10 @@ Mesurés sur minikube et podman avec 2 et 3 réplicas, sous charge (k6) et parco
 | `writeContents` | `GET_AND_SET_ATTRIBUTES` | La valeur par défaut ne réplique pas les beans `@SessionScoped` modifiés en place (formulaires en plusieurs étapes) |
 | Near cache | `OBJECT`, `time-to-live-seconds: 600` | Sans near cache : 2,2 req/s contre 37 ; `BINARY` coûte un tiers de CPU en plus |
 | Near cache de `formsCacheService` | `BINARY` | Forms modifie les objets qu'il lit dans son cache : chaque lecture doit rendre une copie (sinon `ConcurrentModificationException` sur la multivue) ; +5 % de CPU |
-| Caches Lutece côté membre | aucune déclaration, jamais `"*"` | `"*"` s'applique aussi aux caches de session d'OpenLiberty : le cluster ne démarre plus de zéro (SESN0307E) |
+| Caches Lutece côté membre | aucune déclaration | Une entrée qui s'applique aux caches de session d'OpenLiberty (`"*"`, `com.ibm.ws.session.*`) doit déclarer leurs types exacts (clé `String`, valeur `ArrayList` pour `meta`, `byte[]` pour `attr`) : sinon le cluster ne démarre plus de zéro (SESN0307E, types de clé incompatibles) |
+| Sauvegarde des sessions | synchrone (défaut) | Copie asynchrone (`async-backup-count: 1`, types exacts, exemple commenté dans `hazelcast-config-api-mode.yaml`) : pas de gain net mesuré, sessions perdues si un pod tombe |
+| Fichiers téléversés | cache `asynchronousUploadFilesCache`, near cache `BINARY` de 50 entrées | Le contenu est écrit une fois au dépôt, la session ne garde que son identifiant (sinon il est réécrit dans Hazelcast à chaque requête) : session d’un parcours abandonné 0,7 Mo au lieu de 16,4 Mo ; durée de vie `asynchronousupload.files.store.timeToLiveSeconds` (24 h par défaut), au-dessus de la plus longue session ; nombre d'entrées (`core.cache.status.asynchronousUploadFilesCache.maxElementsInMemory`, 10 000 par défaut) à dimensionner sur les fichiers en cours de dépôt et la mémoire du cluster : un fichier évincé avant la validation est une erreur pour l'usager |
+| Adresse du client | `<remoteIp/>` dans `httpEndpoint` | Derrière l'ingress, sans lui tous les usagers ont l'adresse de l'ingress : l'anti-DOS des téléversements du core (`DosGuardFilter`) refuse leurs dépôts successifs (erreur 500) |
 | Taille des caches | `library-cache-hazelcast` | JCache ne transmet pas la taille : sans la bibliothèque, tous les caches sont à 10 000 entrées |
 | Invalidations | `hazelcast.cache.invalidation.batch.enabled: false` | Groupées par défaut : une modification met plusieurs secondes à être vue partout |
 | Hook d'arrêt JVM | désactivé, arrêt `GRACEFUL` | Le hook fermait le membre pendant que des requêtes étaient en cours : 500 au redémarrage progressif |
@@ -182,7 +185,9 @@ session du back office sur 6 pages protégées : tous réussis.
 
 Une donnée modifiée hors de Lutece (script SQL, restauration) reste en cache jusqu'à sa durée de vie (3600 s par défaut)
 plus celle du near cache (600 s), même après un redémarrage progressif : vider les caches depuis le back office, ce qui
-agit sur tout le cluster. Activer ou désactiver un cache depuis le back office s'applique aux autres réplicas en 30 s.
+agit sur tout le cluster. Une préférence d'utilisateur ajoutée par SQL n'est pas vue tant que le cache
+`BaseUserPreferencesCacheService` n'est pas vidé (une préférence absente est mise en cache comme absente). Activer ou
+désactiver un cache, installer ou désinstaller un plugin depuis le back office s'applique aux autres réplicas en 30 s.
 
 ## Observabilité
 

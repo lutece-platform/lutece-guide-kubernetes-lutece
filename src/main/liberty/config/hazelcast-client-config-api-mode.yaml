@@ -24,6 +24,17 @@ hazelcast-client:
         eviction-policy: LRU
         max-size-policy: ENTRY_COUNT
         size: 20000
+    # Contenu des fichiers téléversés (plugin asynchronousupload), lu une ou deux fois par fichier : quelques entrées
+    # seulement gardées par réplica, pour ne pas garder en mémoire les fichiers de tous les usagers.
+    asynchronousUploadFilesCache:
+      in-memory-format: BINARY
+      invalidate-on-change: true
+      time-to-live-seconds: 60
+      max-idle-seconds: 0
+      eviction:
+        eviction-policy: LRU
+        max-size-policy: ENTRY_COUNT
+        size: 50
     # Autres caches : OBJECT, sans copie à la lecture (BINARY : un tiers de CPU en plus).
     "*":
       in-memory-format: OBJECT
